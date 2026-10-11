@@ -1,0 +1,64 @@
+{
+  "name": "waypoint",
+  "version": "0.2.0",
+  "description": "Plan, task and agent progress beside your prompt",
+  "author": { "name": "atharv6f" },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "stallMinutes": {
+      "type": "number",
+      "title": "Stall minutes",
+      "description": "Minutes without a step before a running agent counts as stalled",
+      "default": 10,
+      "min": 1
+    },
+    "startMinutes": {
+      "type": "number",
+      "title": "Start minutes",
+      "description": "Minutes a spawned agent may wait for its first step before it counts as stalled",
+      "default": 2,
+      "min": 1
+    },
+    "compactAtPercent": {
+      "type": "number",
+      "title": "Compact hint threshold",
+      "description": "Context fill percent at which the compact hint is armed",
+      "default": 70,
+      "min": 1,
+      "max": 100
+    },
+    "guideClaude": {
+      "type": "boolean",
+      "title": "Guide Claude",
+      "description": "Add a short guidance section to the system prompt so Claude reports plan steps to waypoint",
+      "default": true
+    },
+    "routerWarnings": {
+      "type": "boolean",
+      "title": "Router warnings",
+      "description": "Warn when an Agent call names no model and when a Workflow agent() call lacks model or effort; role rules apply only with a waypoint-roles.json file",
+      "default": true
+    },
+    "theme": {
+      "type": "string",
+      "title": "Colour source",
+      "description": "auto: the skins plugin's colours when it is installed and enabled, else plain; skins: its colours whenever its files are readable; plain: Claude Code's theme colours only",
+      "default": "auto",
+      "options": ["auto", "skins", "plain"]
+    },
+    "quietToolRows": {
+      "type": "boolean",
+      "title": "Quiet tool rows",
+      "description": "Draw waypoint's own tool calls in the transcript as one dim line each, in place of the stock row with its JSON",
+      "default": true
+    },
+    "bandDefault": {
+      "type": "string",
+      "title": "Band default",
+      "description": "Whether the band shows before /waypoint band on or off has been run",
+      "default": "on",
+      "options": ["on", "off"]
+    }
+  }
+}

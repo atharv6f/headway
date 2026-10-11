@@ -1,0 +1,8 @@
+{
+  "name": "waypoint",
+  "owner": { "name": "atharv6f" },
+  "description": "The waypoint mod for Claude Code: plan, task and agent progress beside your prompt",
+  "plugins": [
+    { "name": "waypoint", "source": "./", "description": "Plan, task and agent progress beside your prompt" }
+  ]
+}
