@@ -56,13 +56,14 @@ interface Heading {
   line: number // 0-based
 }
 
-export const HEADING = /^(#{1,6})[ \t]+(.+?)[ \t]*$/
+const HEADING_OPEN = /^(#{1,6})[ \t]+/
 export const ITEM = /^(\s*)[-*] \[( |x|X)\] (.+)$/
 const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/
 const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/
 const TWO_WORD = /^(?:step|task|phase|stage|part|milestone|item)$/i
 const TOKEN = /^[A-Za-z][A-Za-z0-9]*(?:[-.][A-Za-z0-9]+)*/
-const TABLE_RULE = /^ {0,3}\|? *:?-+:? *(\| *:?-+:? *)*\|? *$/
+export const LINE_MAX = 8192 // a line is read to its first 8 KiB
+const RULE_CELL = /^ *:?-+:? *$/
 const EMPTY_CELLS = ['', '-', '–', '—', '[ ]']
 
 function isEmptyCell(cell: string): boolean {
@@ -137,15 +138,55 @@ export function fencedLines(lines: string[]): boolean[] {
   return out
 }
 
-// ATX heading text without its closing run of #s (CommonMark): `## Phase A ##` is `Phase A`.
+// An ATX heading: one to six #s, a space or tab, then text, which loses its trailing spaces and tabs.
+// The prefix is matched by an anchored regex and the end trimmed by hand, so no pattern backtracks
+// over a run of spaces inside the line.
+export function atxHeading(line: string): { level: number; raw: string } | null {
+  const m = HEADING_OPEN.exec(line)
+  if (!m) return null
+  let end = line.length
+  while (end > m[0].length && (line[end - 1] === ' ' || line[end - 1] === '\t')) end--
+  const raw = line.slice(m[0].length, end)
+  if (raw === '' || raw.indexOf('\u2028') >= 0 || raw.indexOf('\u2029') >= 0) return null
+  return { level: m[1].length, raw }
+}
+
+// ATX heading text without its closing run of #s (CommonMark): `## Phase A ##` is `Phase A`. The run
+// goes when it is the whole text or follows a space or tab, which go with it.
 export function headingText(raw: string): string {
-  return raw.replace(/(^|[ \t]+)#+$/, '')
+  let hashes = raw.length
+  while (hashes > 0 && raw[hashes - 1] === '#') hashes--
+  if (hashes === raw.length) return raw
+  if (hashes === 0) return ''
+  let cut = hashes
+  while (cut > 0 && (raw[cut - 1] === ' ' || raw[cut - 1] === '\t')) cut--
+  return cut === hashes ? raw : raw.slice(0, cut)
+}
+
+// A GFM delimiter row: cells of `-`s, each with an optional `:` either side and spaces around, split
+// by pipes; a leading pipe after at most three spaces, a trailing pipe and trailing spaces allowed.
+// Split by hand, each cell tested by an anchored regex with no two quantifiers over the same text.
+function isTableRule(line: string): boolean {
+  let lead = 0
+  while (line[lead] === ' ') lead++
+  let body = line
+  if (line[lead] === '|') {
+    if (lead > 3) return false
+    body = line.slice(lead + 1)
+  }
+  let end = body.length
+  while (end > 0 && body[end - 1] === ' ') end--
+  if (end > 0 && body[end - 1] === '|') end--
+  return body
+    .slice(0, end)
+    .split('|')
+    .every((cell) => RULE_CELL.test(cell))
 }
 
 // A table starts at a header row with a pipe, followed by a GFM delimiter row that has a pipe;
 // a bare `---` is a thematic break.
 function isTableStart(header: string, delim: string): boolean {
-  return header.indexOf('|') >= 0 && delim.indexOf('|') >= 0 && delim.indexOf('-') >= 0 && TABLE_RULE.test(delim)
+  return header.indexOf('|') >= 0 && delim.indexOf('|') >= 0 && delim.indexOf('-') >= 0 && isTableRule(delim)
 }
 
 function lc(s: string): string {
@@ -178,13 +219,24 @@ function resolveRule(headers: string[], rule: string, firstRow: string[] | undef
   return { kind: m[1] as 'column' | 'check', col }
 }
 
+// The lines of a plan's text: `\r\n` and lone `\r` read as `\n`, each line cut to its first LINE_MAX
+// characters, so no single line costs more than that to scan.
+export function planLines(text: string): string[] {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => (l.length > LINE_MAX ? l.slice(0, LINE_MAX) : l))
+}
+
 export function parsePlan(text: string, opts: ParseOptions = {}, groupMap?: GroupMapEntry[]): ParseResult {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const lines = planLines(text)
   const fenced = fencedLines(lines)
   const headings: Heading[] = []
+  const isHeading: boolean[] = []
   lines.forEach((l, i) => {
-    const m = fenced[i] ? null : HEADING.exec(l)
-    if (m) headings.push({ level: m[1].length, text: headingText(m[2]), line: i })
+    const h = fenced[i] ? null : atxHeading(l)
+    isHeading.push(h !== null)
+    if (h) headings.push({ level: h.level, text: headingText(h.raw), line: i })
   })
 
   // Section range [from, to) in 0-based lines; the heading itself is at `from`.
@@ -202,19 +254,24 @@ export function parsePlan(text: string, opts: ParseOptions = {}, groupMap?: Grou
   }
   const inRange = headings.filter((h) => h.line >= from && h.line < to)
 
-  // Nearest ancestor heading with a real ID, else the nearest heading (3.2).
-  const groupFor = (line: number): Heading | undefined => {
-    const above = inRange.filter((h) => h.line < line)
-    const chain: Heading[] = []
-    let level = Infinity
-    for (let i = above.length - 1; i >= 0; i--) {
-      if (above[i].level < level) {
-        chain.push(above[i])
-        level = above[i].level
-      }
+  // Nearest ancestor heading with a real ID, else the nearest heading (3.2), for a task on each line of
+  // the range: one pass keeps the chain of ancestors (at most six, one per level) of the line.
+  const groupAt: Array<Heading | undefined> = []
+  {
+    const chain: Array<{ h: Heading; withId: Heading | undefined }> = []
+    let k = 0
+    for (let i = from; i < to; i++) {
+      const top = chain[chain.length - 1]
+      groupAt[i] = top ? top.withId ?? top.h : undefined
+      while (k < inRange.length && inRange[k].line < i) k++
+      const h = inRange[k]
+      if (h === undefined || h.line !== i) continue
+      while (chain.length > 0 && chain[chain.length - 1].h.level >= h.level) chain.pop()
+      const below = chain[chain.length - 1]
+      chain.push({ h, withId: parseTaskId(h.text) !== null ? h : below?.withId })
     }
-    return chain.find((h) => parseTaskId(h.text) !== null) ?? chain[0]
   }
+  const groupFor = (line: number): Heading | undefined => groupAt[line]
 
   const tasks: Task[] = []
   const headingOf: Array<Heading | undefined> = []
@@ -237,7 +294,7 @@ export function parsePlan(text: string, opts: ParseOptions = {}, groupMap?: Grou
   for (let i = from; i < to; i++) {
     if (fenced[i]) continue
     const line = lines[i]
-    if (HEADING.test(line)) {
+    if (isHeading[i]) {
       parent = undefined
       continue
     }
@@ -357,6 +414,7 @@ export function parsePlan(text: string, opts: ParseOptions = {}, groupMap?: Grou
     const named = new Set<number>()
     const mapGroups: Group[] = groupMap.map((g) => {
       const members: number[] = []
+      const seen = new Set<number>()
       for (const r of g.rows) {
         const hit = idToTasks.get(r)
         if (!hit) {
@@ -364,7 +422,11 @@ export function parsePlan(text: string, opts: ParseOptions = {}, groupMap?: Grou
           unmappedIds.push(r)
           continue
         }
-        for (const ti of hit) if (members.indexOf(ti) < 0) members.push(ti)
+        for (const ti of hit) {
+          if (seen.has(ti)) continue
+          seen.add(ti)
+          members.push(ti)
+        }
       }
       members.forEach((ti) => named.add(ti))
       return { id: g.id, title: g.title ?? g.id, kind: 'map', tasks: members }

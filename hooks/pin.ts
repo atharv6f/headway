@@ -40,12 +40,19 @@ export function absolutePath(cwd: string, path: string): string {
   return drive === undefined ? '/' + out.join('/') : drive + '\\' + out.join('\\')
 }
 
+// The path without its trailing slashes and backslashes (a pattern for the run would try every start).
+function trimSeparators(p: string): string {
+  let end = p.length
+  while (end > 0 && (p[end - 1] === '/' || p[end - 1] === '\\')) end--
+  return p.slice(0, end)
+}
+
 // Whether a resolved path is the directory or under it (SPEC 14), both as `$.fs.stat(..., { resolve:
 // true })` answers them. A Windows directory (`C:\...`, `\\host\...`) compares in any case and with
 // either slash; a sibling that only shares the prefix (`/wx` for `/w`) is outside.
 export function insideDir(path: string, dir: string): boolean {
   const win = /^[A-Za-z]:([\\/]|$)/.test(dir) || dir.startsWith('\\\\')
-  const norm = (p: string) => (win ? p.replace(/\//g, '\\').toLowerCase() : p).replace(/[\\/]+$/, '')
+  const norm = (p: string) => trimSeparators(win ? p.replace(/\//g, '\\').toLowerCase() : p)
   const d = norm(dir)
   const p = norm(path)
   return p === d || p.startsWith(d + (win ? '\\' : '/'))

@@ -158,15 +158,38 @@ export function sourceFlips(prev: Plan, next: Plan, at: number): LogEntry[] {
 }
 
 const LABEL_MAX = 60
-const PASTE_TAG = /<\/?pasted_content\b[^>]*>/g
+
+// The text without its `<pasted_content ...>` and `</pasted_content>` tags: a tag runs to the first `>`
+// after its name, and with no `>` left there is no tag left. One pass; a pattern with `[^>]*` would
+// rescan the rest of the prompt from every unclosed `<pasted_content`.
+function withoutPasteTags(text: string): string {
+  let out = ''
+  let at = 0
+  let from = 0
+  for (;;) {
+    const lt = text.indexOf('<', from)
+    if (lt < 0) break
+    const name = lt + (text[lt + 1] === '/' ? 2 : 1)
+    const end = name + 'pasted_content'.length
+    if (!text.startsWith('pasted_content', name) || /\w/.test(text[end] ?? ' ')) {
+      from = lt + 1
+      continue
+    }
+    const close = text.indexOf('>', end)
+    if (close < 0) break
+    out += text.slice(at, lt)
+    at = close + 1
+    from = at
+  }
+  return out + text.slice(at)
+}
 
 // The label a `prompt.submit` gives (4.8): a composer prompt that is not a slash command, its
 // pasted-content tags removed (the pasted text stays), the first non-empty line, cut to 60.
 export function promptLabel(text: string, originKind: string | undefined): string | undefined {
   if (originKind !== 'composer' || typeof text !== 'string') return undefined
   if (text.trimStart().startsWith('/')) return undefined
-  const line = text
-    .replace(PASTE_TAG, '')
+  const line = withoutPasteTags(text)
     .replace(/\r\n?/g, '\n')
     .split('\n')
     .map((l) => clean(l))

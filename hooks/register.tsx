@@ -122,6 +122,30 @@ async function tryRead($, path: string): Promise<string | undefined> {
   }
 }
 
+// A config-directory file is read only as a regular file of at most `max` bytes, read where it lands (the
+// real path that was statted). A missing file is silent; one that is a pipe, a device or too large is
+// not read, with one debug line saying why (SPEC 14).
+const ROLES_MAX = 64 * 1024
+const STORE_MAX = 256 * 1024
+const THEME_MAX = 64 * 1024
+const TASK_FILE_MAX = 64 * 1024
+const TASK_FILES_MAX = 500
+
+async function tryReadBounded($, path: string, max: number): Promise<string | undefined> {
+  let st: { kind?: string; size?: number; realPath?: string }
+  try {
+    st = await $.fs.stat(path, { resolve: true })
+  } catch {
+    return undefined
+  }
+  const why = unreadable(st, max)
+  if (why !== undefined) {
+    fault($, path + ' not read', new Error(why))
+    return undefined
+  }
+  return tryRead($, st.realPath ?? path)
+}
+
 // Where a path lands, every link followed (`$.fs.stat` with `resolve`); undefined when it does not
 // stat or the answer carries no real path. The boundaries of SPEC 14 compare these.
 async function realPathOf($, path: string): Promise<string | undefined> {
@@ -181,7 +205,7 @@ async function refreshTheme($) {
   const cfg = await configDir($)
   const store = (await tryList($, cfg + '/plugins/store')).find((x) => storeRe(entry.marketplace).test(x.name))
   const storePath = store ? cfg + '/plugins/store/' + store.name : undefined
-  const text = storePath ? await tryRead($, storePath) : undefined
+  const text = storePath ? await tryReadBounded($, storePath, STORE_MAX) : undefined
   const settings = parseStore(text, await $.session.cwd())
   let filePath: string | undefined
 
@@ -205,7 +229,7 @@ async function refreshTheme($) {
         overrides = pick.overrides
         custom = pick.file !== pick.name
         filePath = themes + '/' + pick.file + '.ts'
-        const src = await tryRead($, filePath)
+        const src = await tryReadBounded($, filePath, THEME_MAX)
         file = src === undefined ? null : parseThemeFile(src)
         if (file === null) reason = (src === undefined ? 'cannot read ' : 'cannot parse ') + themes + '/' + pick.file + '.ts'
       }
@@ -376,19 +400,32 @@ function currentPlan($, known?: PlanInputs): Promise<Plan | null> {
 }
 
 // A file read for the plan (SPEC 4.2, 14): stat with every link followed, then, for a bounded pin, the
-// real path must land under the bound; the real path that was statted, never the path as given, is
-// what is read, so a link swapped after the check is not followed. Its text, or the refusal in plain
-// words (pin.ts readFailure) naming the path as the user typed it, else as it was resolved.
+// real path must land under the bound, and what it leads to must be a regular file of at most `max`
+// bytes (a pipe or a device is never read); the real path that was statted, never the path as given,
+// is what is read, so a link swapped after the check is not followed. Its text, or the refusal in
+// plain words (pin.ts readFailure) naming the path as the user typed it, else as it was resolved.
 type ReadOutcome = { ok: true; text: string } | { ok: false; error: string }
+const PLAN_MAX = 2 * 1024 * 1024
+const GROUP_MAP_MAX = 256 * 1024
 
-async function readText($, path: string, shown: string, bound?: string): Promise<ReadOutcome> {
-  let real: string | undefined
+// Why a stat's answer is not a file waypoint reads: not a regular file, or over `max` bytes; else none.
+function unreadable(st: { kind?: string; size?: number }, max: number): string | undefined {
+  if (st.kind !== 'file') return 'not a regular file'
+  if (!(typeof st.size === 'number' && st.size <= max)) return 'file too large'
+  return undefined
+}
+
+async function readText($, path: string, shown: string, max: number, bound?: string): Promise<ReadOutcome> {
+  let st: { kind?: string; size?: number; realPath?: string }
   try {
-    real = (await $.fs.stat(path, { resolve: true })).realPath
+    st = await $.fs.stat(path, { resolve: true })
   } catch (err) {
     return { ok: false, error: readFailure(err, shown) }
   }
+  const real = st.realPath
   if (bound !== undefined && (real === undefined || !insideDir(real, bound))) return { ok: false, error: shown + ' lands outside ' + bound }
+  const why = unreadable(st, max)
+  if (why !== undefined) return { ok: false, error: why + ': ' + shown }
   try {
     return { ok: true, text: await $.fs.read(real ?? path) }
   } catch (err) {
@@ -398,11 +435,11 @@ async function readText($, path: string, shown: string, bound?: string): Promise
 
 async function readPlan($, filter: Filter, typed?: Typed): Promise<{ ok: true; plan: Plan } | { ok: false; error: string }> {
   try {
-    const file = await readText($, filter.file, typed?.file ?? filter.file, filter.bounds?.file)
+    const file = await readText($, filter.file, typed?.file ?? filter.file, PLAN_MAX, filter.bounds?.file)
     if (!file.ok) return file
     let groups: GroupMapEntry[] | undefined
     if (filter.groupMap) {
-      const map = await readText($, filter.groupMap, typed?.groupMap ?? filter.groupMap, filter.bounds?.groupMap)
+      const map = await readText($, filter.groupMap, typed?.groupMap ?? filter.groupMap, GROUP_MAP_MAX, filter.bounds?.groupMap)
       if (!map.ok) return map
       const gm = parseGroupMap(map.text)
       if (!gm.ok) return { ok: false, error: gm.error }
@@ -825,14 +862,12 @@ async function stateText($, logEntries: unknown): Promise<string> {
   })
 }
 
-// A pin made on Claude's behalf (SPEC 14), through the model tool or a `/waypoint track` the user did
-// not type, lands only inside the project: the plan file and the group map must land, every link
-// followed, under the session directory's own real path, since what waypoint reads flows back to
-// Claude through `state` outside Claude Code's permissions. The one exception is the plan file of the
-// approved plan-mode plan (4.4), and only where it lands under `<configDir>/plans`, which then bounds
-// it. A path that does not stat keeps the plain refusal; one that stats without a real path is
-// outside. Answers the filter with its bounds, which every later read of the pin holds to (readText),
-// or the refusal.
+// A pin made on Claude's behalf (SPEC 14), through the model tool, lands only inside the project: the
+// plan file and the group map must land, every link followed, under the session directory's own real
+// path, since what waypoint reads flows back to Claude through `state` outside Claude Code's
+// permissions. A path that does not stat keeps the plain refusal; one that stats without a real path
+// is outside. Answers the filter with its bounds, which every later read of the pin holds to
+// (readText), or the refusal.
 async function boundedFilter($, filter: Filter, typed: Typed): Promise<{ filter: Filter } | { refusal: string }> {
   const root = await realPathOf($, await $.session.cwd())
   const paths: Array<['file' | 'groupMap', string, string]> = [['file', filter.file, typed.file]]
@@ -845,7 +880,7 @@ async function boundedFilter($, filter: Filter, typed: Typed): Promise<{ filter:
     } catch (err) {
       return { refusal: 'refused: ' + readFailure(err, shown) }
     }
-    const bound = real === undefined ? undefined : root !== undefined && insideDir(real, root) ? root : key === 'file' ? await plansBound($, path, real) : undefined
+    const bound = real !== undefined && root !== undefined && insideDir(real, root) ? root : undefined
     if (bound === undefined) {
       const again = typed.file + (filter.groupMap ? ' groups=' + (typed.groupMap ?? filter.groupMap) : '')
       return { refusal: 'refused: outside the project; ask the user to run /waypoint track ' + clean(again) }
@@ -855,18 +890,13 @@ async function boundedFilter($, filter: Filter, typed: Typed): Promise<{ filter:
   return { filter: { ...filter, bounds: { file: bounds.file!, ...(bounds.groupMap !== undefined ? { groupMap: bounds.groupMap } : {}) } } }
 }
 
-// The real `<configDir>/plans` when `path` is the approved plan-mode file and lands under it; else none.
-async function plansBound($, path: string, real: string): Promise<string | undefined> {
-  if (!isPlanModeFile(path, handoff.file)) return undefined
-  const plans = await realPathOf($, (await configDir($)) + '/plans')
-  return plans !== undefined && insideDir(real, plans) ? plans : undefined
-}
-
 async function runTool($, e): Promise<string> {
   switch (e.action) {
     case 'track': {
       const parsed = filterFromInput(e, await $.session.cwd())
       if (!parsed.ok) return 'refused: ' + parsed.error
+      // the approved plan-mode file (4.4) is not read: while its plan is drawn and unfinished the plan
+      // came with the approval; otherwise it is a path like any other, outside the project
       const ids = await planModeIds($, true)
       if (ids.length > 0 && isPlanModeFile(parsed.filter.file, handoff.file)) {
         return 'already tracking this plan from plan mode; use report updates with ids: ' + idsText(ids)
@@ -904,7 +934,10 @@ async function setBand($, on: boolean): Promise<void> {
 
 // `typed`: the person ran it at the prompt (origin `composer`, SPEC 9.2). Any other run (a message a
 // model wrote, a relay, a notification, another plugin's `$.command.run`, a scheduled prompt, a run
-// with no stamp) pins only as Claude's tool does.
+// with no stamp) may only read: `track`, `untrack` and `band on|off` are refused before they touch
+// anything; the pane, its tabs and `status` answer as usual.
+const FROM_PROMPT = 'refused: run this from the prompt'
+
 async function runCommand($, args: string, typed: boolean) {
   const [word, ...more] = args.split(/\s+/)
   const rest = args.slice(word.length).trim()
@@ -913,12 +946,12 @@ async function runCommand($, args: string, typed: boolean) {
     else await openPane($)
     return {}
   }
+  const mutating = word === 'track' || (word === 'untrack' && rest === '') || (word === 'band' && more.length === 1 && (rest === 'off' || rest === 'on'))
+  if (mutating && !typed) return { text: FROM_PROMPT }
   if (word === 'track') {
     const parsed = parsePinArgs(rest, await $.session.cwd())
     if (!parsed.ok) return { text: 'refused: ' + parsed.error }
-    if (typed) return { text: await pin($, parsed.filter, parsed.typed) }
-    const bounded = await boundedFilter($, parsed.filter, parsed.typed)
-    return { text: 'refusal' in bounded ? bounded.refusal : await pin($, bounded.filter, parsed.typed) }
+    return { text: await pin($, parsed.filter, parsed.typed) }
   }
   if (word === 'untrack' && rest === '') return { text: await unpin($) }
   if (word === 'status' && rest === '') return { text: await stateText($, undefined) }
@@ -1069,8 +1102,10 @@ function cleared(record: SavedSession): SavedSession {
 // The task list of `<configDir>/tasks/<session_id>/*.json` (SPEC 4.5); null when the directory has no task file.
 async function taskFilesList($, sessionId: string): Promise<TaskItem[] | null> {
   const dir = (await configDir($)) + '/tasks/' + sessionId
-  const names = (await tryList($, dir)).filter((f) => f.kind === 'file' && f.name.endsWith('.json')).map((f) => f.name)
-  const texts = await Promise.all(names.map((n) => tryRead($, dir + '/' + n)))
+  const all = (await tryList($, dir)).filter((f) => f.kind === 'file' && f.name.endsWith('.json')).map((f) => f.name)
+  if (all.length > TASK_FILES_MAX) fault($, dir, new Error(all.length + ' task files, over ' + TASK_FILES_MAX + '; the rest are not read'))
+  const names = all.slice(0, TASK_FILES_MAX)
+  const texts = await Promise.all(names.map((n) => tryReadBounded($, dir + '/' + n, TASK_FILE_MAX)))
   return rebuildFromFiles(texts.filter((t): t is string => t !== undefined))
 }
 
@@ -1298,7 +1333,7 @@ async function loadRoles($): Promise<void> {
   rolesWatch = { mtime: await mtimeOf($, path) }
   roles = undefined
   if (!routerOn || rolesWatch.mtime === undefined) return
-  const text = await tryRead($, path)
+  const text = await tryReadBounded($, path, ROLES_MAX)
   if (text === undefined) return
   const parsed = parseRoles(text)
   if ('roles' in parsed) {
@@ -1462,28 +1497,42 @@ async function routeAgentCall($, e, next) {
   const named = routerOn && !e.model && roleOf(e.subagent_type) !== 'fork' ? await definedModel($, e.subagent_type) : undefined
   const input = { description: e.description ?? '', subagentType: e.subagent_type, model: e.model, definedModel: named }
   const found = routerOn ? [ruleR1(input), ruleR3(input, roles)].filter((w): w is Warning => w !== undefined) : []
-  if (found.length > 0) {
-    if (e.tool_use_id) pendingWarnings.set(e.tool_use_id, found.map(warningString))
-    await announce($, found, roleOf(e.subagent_type) || undefined)
-  }
+  // The mark is kept before next(e), which is where the agent.spawn that reads it happens.
+  if (found.length > 0 && e.tool_use_id) pendingWarnings.set(e.tool_use_id, found.map(warningString))
   const result = await next(e)
-  if ('deny' in result && result.deny && e.tool_use_id) pendingWarnings.delete(e.tool_use_id)
+  if ('deny' in result && result.deny) {
+    if (e.tool_use_id) pendingWarnings.delete(e.tool_use_id)
+    return result
+  }
+  // R1 and R3 are said only for a call that went on: a denied one leaves no log entry and no toast.
+  // Past next(e) a fault must not reach the caller's .catch, which would run the Agent call again.
+  if (found.length > 0) await guarded($, 'tool.call Agent R1', () => announce($, found, roleOf(e.subagent_type) || undefined))
   return withContext(result, found)
 }
 
 // The script text of a Workflow call: the file when `scriptPath` is given (the tool prefers it to
 // `script`), else the inline script. A named workflow has neither. The file is read only where it
 // lands inside the project or the Claude Code config directory, where workflow scripts are kept
-// (SPEC 14); elsewhere the path is ignored and the inline script, if any, is parsed.
+// (SPEC 14), and only when it is a regular file of at most SCRIPT_MAX bytes; otherwise the path is
+// ignored and the inline script, if any, is parsed. An inline script longer than SCRIPT_MAX
+// characters is not parsed at all.
+const SCRIPT_MAX = 256 * 1024
+
 async function workflowScript($, e): Promise<string | undefined> {
   if (typeof e.scriptPath === 'string' && e.scriptPath !== '') {
-    const real = await realPathOf($, e.scriptPath)
-    if (real !== undefined && (await insideAny($, real, [() => $.session.cwd(), () => configDir($)]))) {
+    let st: { kind?: string; size?: number; realPath?: string } | undefined
+    try {
+      st = await $.fs.stat(e.scriptPath, { resolve: true })
+    } catch {
+      st = undefined
+    }
+    const real = st?.realPath
+    if (st && real !== undefined && unreadable(st, SCRIPT_MAX) === undefined && (await insideAny($, real, [() => $.session.cwd(), () => configDir($)]))) {
       const text = await tryRead($, real)
       if (text !== undefined) return text
     }
   }
-  return typeof e.script === 'string' ? e.script : undefined
+  return typeof e.script === 'string' && e.script.length <= SCRIPT_MAX ? e.script : undefined
 }
 
 // Whether a real path is under the real path of any of the directories, asked for in order.
@@ -1537,21 +1586,21 @@ async function routeWorkflowCall($, e, next) {
   if (parsed.phases !== undefined && parsed.phases.length > 0) await guarded($, 'tool.call Workflow label', () => startSource($, 'phases'))
   await guarded($, 'tool.call Workflow phases', () => rematchPhases($))
   const found = r2 ? [r2.warning] : []
-  if (found.length > 0) await announce($, found, undefined)
 
   const result = await next(e)
-  // Past next(e) a fault must not reach the caller's .catch, which would run the Workflow again.
+  if ('deny' in result && result.deny) {
+    // Past next(e) a fault must not reach the caller's .catch, which would run the Workflow again.
+    await guarded($, 'tool.call Workflow', () => applyAgents($, (agents) => dropPlanned(agents, e.tool_use_id)))
+    return result
+  }
   await guarded($, 'tool.call Workflow', async () => {
-    if ('deny' in result && result.deny) {
-      await applyAgents($, (agents) => dropPlanned(agents, e.tool_use_id))
-      return
-    }
     const runId = result.result?.runId
     // No run id: a failed syntax check or a remote launch, whose agents no local event names.
     if (typeof runId === 'string') await applyAgents($, (agents) => bindRun(agents, e.tool_use_id, runId))
     else await applyAgents($, (agents) => dropPlanned(agents, e.tool_use_id))
   })
-  if ('deny' in result && result.deny) return result
+  // R2 is said only for a call that went on: a denied one leaves no log entry naming its script
+  if (found.length > 0) await guarded($, 'tool.call Workflow R2', () => announce($, found, undefined))
   return withContext(result, found)
 }
 

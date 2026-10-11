@@ -584,3 +584,63 @@ test('bandDefault off: the band starts hidden, band on shows it and the pref the
   await userCommand($, 'band off')
   expect(await bandShows($)).toBe(false)
 })
+
+// ---------------------------------------------------------------- the role file, the skins store and a theme file are statted before they are read
+
+const ROLES_MAX = 64 * 1024
+const STORE_MAX = 256 * 1024
+const THEME_MAX = 64 * 1024
+const pad = (text: string, size: number) => text + ' '.repeat(Math.max(0, size - text.length))
+
+test('roles: a file over 64 KiB, or not a regular file, is not read; R3 stays off and one debug line says why', async ($, on) => {
+  const logs = logsOf(on)
+  const w = open(on, { files: { [ROLE_FILE]: pad(ROLES, ROLES_MAX + 1) } })
+  beneathAgents(on, [])
+  await start($)
+  expect(w.reads.filter((p) => p === ROLE_FILE)).toEqual([])
+  expect((await agentCall($, { subagent_type: 'scout', model: 'opus' })).context).toBe(undefined)
+  expect(logs.filter((l) => l.includes('waypoint-roles.json'))).toEqual(['waypoint: ' + ROLE_FILE + ' not read: file too large'])
+  // the file in range is read: exactly 64 KiB
+  w.files[ROLE_FILE] = pad(ROLES, ROLES_MAX)
+  w.mtimes[ROLE_FILE] = 2
+  await w.clock.advance(10_000)
+  expect(w.reads.filter((p) => p === ROLE_FILE).length).toBe(1)
+  expect((await agentCall($, { subagent_type: 'scout', model: 'opus' })).context?.length).toBe(1)
+  // a pipe is never read
+  w.kinds[ROLE_FILE] = 'fifo'
+  w.mtimes[ROLE_FILE] = 3
+  await w.clock.advance(10_000)
+  expect(w.reads.filter((p) => p === ROLE_FILE).length).toBe(1)
+  expect(logs.filter((l) => l.includes('waypoint-roles.json')).pop()).toBe('waypoint: ' + ROLE_FILE + ' not read: not a regular file')
+})
+
+test('skins: a store over 256 KiB is not read (skins at its defaults), one of exactly 256 KiB is', async ($, on) => {
+  const logs = logsOf(on)
+  const files = skinsFiles()
+  const store = CFG + '/plugins/store/skins_example-mods-abc123.json'
+  files[store] = pad(files[store], STORE_MAX + 1)
+  const w = open(on, { files, enabledPlugins: SKINS_ON })
+  await start($)
+  expect(w.reads.filter((p) => p === store)).toEqual([])
+  expect(themeOf(w)).toMatchObject({ name: 'noir', icons: 'unicode' }) // dracula/ascii is what the store says
+  expect(logs.filter((l) => l.includes('skins_example-mods'))).toEqual(['waypoint: ' + store + ' not read: file too large'])
+  w.files[store] = pad(skinsFiles()[store], STORE_MAX)
+  await start($)
+  expect(themeOf(w)).toMatchObject({ name: 'dracula', icons: 'ascii' })
+})
+
+test('skins: a theme file over 64 KiB is not read; the theme falls to ANSI with one toast and one debug line', async ($, on) => {
+  const logs = logsOf(on)
+  const files = skinsFiles()
+  const theme = CFG + '/plugins/cache/example-mods/skins/0.5.1/hooks/themes/dracula.ts'
+  files[theme] = pad(files[theme], THEME_MAX + 1)
+  const w = open(on, { files, enabledPlugins: SKINS_ON })
+  await start($)
+  expect(w.reads.filter((p) => p === theme)).toEqual([])
+  expect(themeOf(w).ansi).toBe(true)
+  expect(w.toasts.length).toBe(1)
+  expect(logs.filter((l) => l.includes('dracula.ts'))).toEqual(['waypoint: ' + theme + ' not read: file too large'])
+  w.files[theme] = pad(skinsFiles()[theme], THEME_MAX)
+  await start($)
+  expect(themeOf(w)).toMatchObject({ name: 'dracula', ansi: false })
+})

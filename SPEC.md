@@ -72,7 +72,7 @@ Agent statuses, in the order the Agents tab sorts them:
 
 | Status | Enters when | Leaves when |
 | :- | :- | :- |
-| blocked | `turn.complete` with `reason === 'answer'` and `e.answer` has a line matching `/^\s*BLOCKED\b/m` | a `turn.step` arrives (a SendMessage resume): running, log `resumed` |
+| blocked | `turn.complete` with `reason === 'answer'` and a line in the first 4 KiB of `e.answer` whose first word is `BLOCKED` (found with string operations; the text after it, an optional `:` dropped, is the question) | a `turn.step` arrives (a SendMessage resume): running, log `resumed` |
 | stalled | running and no `turn.step` for `stallMinutes`; or spawned and no `turn.step` within `startMinutes` | a `turn.step` (running) or a `turn.complete` |
 | running | first `turn.step` with its `agentId` | `turn.complete` |
 | queued | `agent.spawn` seen, no `turn.step` yet | first step, or the start timeout |
@@ -156,7 +156,8 @@ plus the hook that writes its data.
 The user's plan file stays the only record; waypoint reads it and never writes it.
 
 **Shapes.** Two generic shapes; a file may hold both, and each section is parsed independently.
-Line endings `\r\n` and lone `\r` are read as `\n`. Lines inside fenced code blocks are ignored: a
+Line endings `\r\n` and lone `\r` are read as `\n`; a line is read to its first 8,192 characters
+(8 KiB) and the rest of it is ignored. Lines inside fenced code blocks are ignored: a
 fence opener is a line that starts, after at most three spaces, with ``` or ~~~ and does not close
 on the same line; it is closed by a line of the same marker at least as long, or by the end of the
 file. ATX headings lose their closing `#`s.
@@ -241,13 +242,15 @@ Plan tab footer as `n unmapped rows`. A task named by several groups appears und
 paths are made absolute against `$.session.cwd()` at pin time. A `track` through the model tool pins
 only inside the project (section 14): the file and the group map must land, every link followed
 (`$.fs.stat(path, { resolve: true }).realPath`), under the real path of the session directory, else
-`refused: outside the project; ask the user to run /waypoint track <file> [groups=<map>]`. So does a
-`/waypoint track` the user did not type (9.2). The one exception is the approved plan-mode file
-(4.4), and only where it lands under the real `<configDir>/plans`, which is then its bound; the
-user's own `/waypoint track` is not held to this. Such a
+`refused: outside the project; ask the user to run /waypoint track <file> [groups=<map>]`. There is
+no exception: a file under `<configDir>/plans` is outside the project like any other (4.4). A
+`/waypoint track` the user did not type is refused outright (9.2); the user's own `/waypoint track`
+is not held to the project. Such a
 pin keeps that real directory as its `bounds` (`{ file, groupMap? }`, saved with the filter), and every
 read of the file or the map, at the pin and on each poll re-read, goes stat with links followed, then
-the real path checked against the bound, then a read of that real path, never of the path as given;
+the real path checked against the bound, then a check that it leads to a regular file of at most 2 MiB (a group map: 256 KiB), else
+`refused: not a regular file: <path>` or `refused: file too large: <path>` with nothing read (a pipe
+or a device is never opened), then a read of that real path, never of the path as given;
 a re-read that lands outside keeps the last good parse and the goal's error reads `<path> lands
 outside <dir>`. A pin of the user's has no bounds and reads the real path the same way. One filter at
 a time; `bounds` says who pinned it, not which plan, so it is not compared. Pinning the
@@ -366,11 +369,11 @@ not in the session record.
   either separator and in any case), while the plan-mode plan is the
   active source and not finished (`doneAt` unset), pins nothing and replies `already tracking this
   plan from plan mode; use report updates with ids: 1.1, 1.2, …` (the step ids in order, without
-  repeats; at most 12, then `, +<n>`). This holds fresh or not. Any other file, another plan file
-  under `<configDir>/plans/` included, and the approved file once the plan is finished, are pinned as
-  usual, held to the project (4.2, 14); the approved file alone may also land under the real
-  `<configDir>/plans`, and a path either field names elsewhere (a rejected call carried across "clear
-  context" included) opens no exception. The user's own `/waypoint track` is not affected.
+  repeats; at most 12, then `, +<n>`), with nothing statted or read. This holds fresh or not. Any
+  other file, another plan file under `<configDir>/plans/` included, and the approved file once the
+  plan is finished or no longer drawn, is held to the project like any path (4.2, 14), so a file
+  under `<configDir>/plans` is refused unread: the plan-mode plan comes from the ExitPlanMode result,
+  never from a read of its file. The user's own `/waypoint track` is not affected.
 - A full `report` list (`tasks`) while the approval is fresh, the plan-mode plan is the active
   source and it is not finished (`doneAt` unset) is refused: `refused: a plan from plan mode is
   tracked; send updates with its ids: 1.1, 1.2, …` (the same id list). Nothing is stored. Once the
@@ -482,7 +485,7 @@ label and the newest prompt are kept in the session record.
 | :- | :- | :- |
 | `tool.call` `{ tool: 'Agent' }` | router rules at dispatch; the ID search text | `e.description`, `e.prompt`, `e.subagent_type`, `e.model`, `e.name`, `e.tool_use_id` |
 | `agent.spawn` | create the record; for a Workflow agent, the join (5.2) | `e.tool_use_id`, `e.description`, `e.subagentType`, `e.prompt`, `e.name`, `e.parentAgentId`, `e.workflow?.{runId, agentIndex}`; from `await next(e)`: `agentId`, `model`, or `deny` |
-| `tool.call` `{ tool: 'Workflow' }` | parse the script; rule R2; after `next(e)`: `result.result.runId` | `$.fs.read` of where `e.scriptPath` lands when it lands inside the project or the Claude Code config directory (the tool prefers it to `script`, so waypoint reads the same text; section 14), else `e.script` |
+| `tool.call` `{ tool: 'Workflow' }` | parse the script; rule R2, logged, toasted and noted only after `next(e)` and only when the call was not denied; after `next(e)`: `result.result.runId` | `$.fs.read` of where `e.scriptPath` lands when it lands inside the project or the Claude Code config directory and is a regular file of at most 256 KiB (the tool prefers it to `script`, so waypoint reads the same text; section 14), else `e.script` when it is at most 262,144 characters (256 Ki); a longer inline script is not parsed |
 | `turn.step` (async generator, `yield* next(e)`) | running status, last activity, model, effort, tokens | `e.agentId`, `e.model`, `e.effort`, `result.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, model}` |
 | `turn.complete` | final status, answer, duration | `e.agentId`, `e.reason`, `e.answer`, `e.durationMs`, `e.usage` |
 | `$.agent.list()` on the 15 s timer | `failed`/`killed` the events missed; `name` | `id`, `status`, `name`, `description` |
@@ -521,7 +524,12 @@ evaluator: `meta.phases` is the array after `phases:`, each entry a string liter
 whose `title:` is one (`{ title: 'Read' }`); each `agent(` takes
 its balanced argument text, the last top-level `{ ... }` is the options object, and `label:`,
 `phase:`, `model:`, `effort:` are read from it. A string literal is a value; a template literal is a
-pattern with `${...}` spans as `*`; anything else is `dynamic`. The parser never throws.
+pattern with `${...}` spans as `*`; anything else is `dynamic`. The parser never throws, and its time
+is linear in the script: strings, templates, comments and regex literals are masked in one forward pass
+with an explicit stack of what is open (a `${` nested to any depth included), the brackets are matched in one pass with a stack, each argument list is
+split stepping over its nested brackets whole, and the enclosing `parallel`/`pipeline` calls and
+the preceding `phase()` statement are tracked in source order (a call's `nesting` names at most its
+eight outermost).
 
 A call with no `phase:` option takes the phase of the last `phase('name')` statement before it in
 the source, and only while the order is certain: every `phase(...)` call is at the top level of the
@@ -643,8 +651,9 @@ the parent's, so comparing with `parentModel` is not a test. waypoint therefore 
 definition: `<type>.md` (the last `:` segment, case kept) in `.claude/agents` of the session
 directory and each parent, then `<configDir>/agents`, and for a `plugin:type` name each
 `<configDir>/plugins/cache/<marketplace>/<plugin>/<version>/agents`; the first file found decides,
-and a `model:` of `inherit`, empty, or no line counts as no model. A UTF-8 byte order mark before the
-opening `---` is tolerated. A definition not found (a file named differently from its type, a plugin
+and a `model:` of `inherit`, empty, or no line counts as no model. The frontmatter is read line by
+line with string operations, no pattern over a line. A UTF-8 byte order mark before the opening
+`---` is tolerated. A definition not found (a file named differently from its type, a plugin
 loaded by `--plugin-dir`, a built-in type) counts as no model, so R1 fires as before.
 
 The lookup is bounded. Every segment of the type name (and each marketplace, plugin and version
@@ -675,7 +684,8 @@ Precedence: `routerWarnings: false` beats everything; otherwise R1 and R2 always
 run only for roles the file names, and never for a model family of `unknown` (such as `inherit`).
 A file that does not parse disables R3/R4 and toasts once per session with the parse error.
 
-Delivery, every time R1–R3 fire at dispatch: for the user, an amber `⚠` before the agent's row in
+Delivery, every time R1–R3 fire at dispatch, once `next(e)` has answered and only when the call was
+not denied: for the user, an amber `⚠` before the agent's row in
 the band, the Plan tree and the Agents tab, a log entry, and one `$.ui.toast` per dispatch; for
 Claude, `const result = await next(e)` then `{ ...result, context: [...(result.context ?? []),
 text] }` (*verified:* the text reaches Claude for Agent and Workflow calls). `deny` results are
@@ -753,12 +763,14 @@ context: 71% ($12.34) — contextHint: compact-at-next-boundary
 
 The command returns `{ text }` for `track`, `untrack`, `status` and refusals, `{}` otherwise.
 
-`track` is unrestricted only when the person typed it: `e.origin.kind === 'composer'`, which the
-engine stamps on Enter at the prompt and never presumes. Any other run (a message a model wrote,
-`peer-send-message` or `peer`; a `coordinator`, `channel` or `projects-relay` delivery; a
-`task-notification`; a `scheduled-trigger`; another plugin's `$.command.run`, `plugin`; `bridge`,
-`sdk`; a run with no stamp, `unclassified` or none) pins only as the tool's `track` does (4.2, 14)
-and gets the same `refused: outside the project; ...`.
+The forms that change something, `track`, `untrack` and `band off`/`band on`, run only when the
+person typed them: `e.origin.kind === 'composer'`, which the engine stamps on Enter at the prompt
+and never presumes. Any other run (a message a model wrote, `peer-send-message` or `peer`; a
+`coordinator`, `channel` or `projects-relay` delivery; a `task-notification`; a `scheduled-trigger`;
+another plugin's `$.command.run`, `plugin`; `bridge`, `sdk`; a run with no stamp, `unclassified` or
+none) gets `refused: run this from the prompt` before anything is parsed, statted or written. The
+forms that only read or show, `/waypoint` alone, the tab names, `close` and `status`, answer from
+any origin.
 
 ## 10. UI
 
@@ -930,7 +942,8 @@ is the entry of `$.fs.list(<configDir>/plugins/store)` matching `skins_<marketpl
 fields `prefs.skin`, `prefs.icons` (`unicode`|`ascii`), `custom`, `folders` (the entry keyed by
 `$.session.cwd()` overrides `prefs`). The palette is the file
 `<configDir>/plugins/cache/<marketplace>/skins/<highest version>/hooks/themes/<skin>.ts`, read with a
-regex per `palette:` and `light:` block, never evaluated. A missing store means skins' defaults
+scan per `palette:` and `light:` block (a `key: {` at the start of a line, to the first `}`) and a
+pattern per slot line, never evaluated. A missing store means skins' defaults
 (`noir`, `unicode`); `prefs.skin === 'off'` or an unreadable theme file means plain, with one toast
 per session naming the reason. The store and theme files are stat-polled every fifth 2 s tick so
 `/skin <name>` recolours waypoint live.
@@ -1019,13 +1032,12 @@ What waypoint does with your machine, in full:
 
 - **Network:** none. No fetch, no telemetry, no update check.
 - **Reads:** the plan file and group map you pin (any path), or that Claude pins through the tool's
-  `track` action or a `/waypoint track` you did not type (only inside the project: the path must land,
-  every link followed, under the real path of the session directory; the approved plan-mode file
-  under `<configDir>/plans` excepted, 4.4), since what waypoint reads
-  flows back to Claude through `state`, outside Claude Code's permissions; such a pin keeps its bound,
-  and every read of it, at the pin and on each poll, stats the path with links followed, checks the
-  real path against the bound and reads that real path, so a link swapped after the check is not
-  followed (4.2); `<configDir>/waypoint-roles.json`
+  `track` action (only inside the project: the path must land, every link followed, under the real
+  path of the session directory, with no exception; a file under `<configDir>/plans` is never read
+  for Claude, 4.4), since what waypoint reads flows back to Claude through `state`, outside Claude
+  Code's permissions; such a pin keeps its bound, and every read of it, at the pin and on each poll,
+  stats the path with links followed, checks the real path against the bound and reads that real
+  path, so a link swapped after the check is not followed (4.2); `<configDir>/waypoint-roles.json`
   if you create it; the Workflow script file by path (`scriptPath`, which the tool prefers to an
   inline `script`, so waypoint reads the text that runs), only when it lands inside the project or
   the config directory, and then the real path checked is what is read, else the inline `script` is
@@ -1041,6 +1053,17 @@ What waypoint does with your machine, in full:
   settings through `$.settings.read()` (to see whether skins is enabled); `$.session.usage()`,
   `$.agent.list()`, `$.config.list()` and the `CLAUDE_CONFIG_DIR`, `HOME`, `USERPROFILE`, `SKINS_THEME` and
   `COLORFGBG` variables.
+- **Sizes:** a read is made only of a regular file, never a pipe or a device, and only up to a cap
+  checked on the stat before the read: the plan file 2 MiB, a group map 256 KiB, a Workflow script
+  file 256 KiB, an agent definition 64 KiB, the role file 64 KiB, skins' store 256 KiB, a skins theme
+  file 64 KiB, each Claude Code task file 64 KiB (at most 500 task files are read per session); a
+  larger plan file or group map is refused (`file too large`), any other larger file is skipped with
+  one debug line saying why. An inline Workflow `script` over 262,144 characters is not parsed.
+  Every parse is linear in its input: a plan line is read to its first 8 KiB, an agent's answer to
+  its first 4 KiB for a BLOCKED line, and no pattern backtracks over a run of spaces (4.2, 5.2, 7).
+  A pattern over text a model, a file or the user supplies is linear on an 8 KiB line (64 KiB for a
+  theme file): plan titles, numbered items, theme blocks, pasted-content tags and path separators are
+  scanned by hand, and a test times each on its worst line.
 - **Residual race:** each bounded read is stat, check, then a read of the real path the stat
   answered. That path is fully resolved, but a directory on it can still be swapped for a link
   between the stat and the read, and the read would follow it; doing so needs write access to a
@@ -1057,18 +1080,21 @@ What waypoint does with your machine, in full:
   tool when Claude calls it. Nothing else.
 - **What Claude can do through the tool:** pin a file for waypoint to read (`track`) inside the
   project, give a task list, move statuses, set the focus, unpin. Claude can pin a file only inside
-  the project (or the approved plan-mode file under `<configDir>/plans`), and so can a `/waypoint
-  track` that you did not type at the prompt (9.2); you can pin any file with `/waypoint track`.
-  Nothing it sends is written to a file.
+  the project; you can pin any file with `/waypoint track`. A `/waypoint track`, `untrack` or
+  `band on|off` that you did not type at the prompt (one in a message a model wrote, a relay, a
+  notification, another plugin's run, a scheduled prompt) is refused (9.2); `status` and the pane
+  answer from anywhere. Nothing it sends is written to a file.
 - **Text that becomes a pattern:** no text from you, Claude or a file becomes a regex of its own.
   Plan IDs are matched literally, as escaped text, in the first 2000 characters of a prompt; a Workflow
   label pattern is a glob matched without a regex (5.2). No text a model or a file
   supplies reaches a terminal unsanitised: router warnings clean every value they quote (the role,
   the model family, the effort, the description, the role file's names).
 - **What it never does:** deny or rewrite a tool call; retry or schedule an agent. Before an Agent
-  or Workflow call goes on, waypoint's hook may read a small file (an agent definition, the
-  Workflow script) and show a toast; it then passes the call on unchanged, and a fault in the hook
-  lets the call through. The other `tool.call` hooks act after the call has run.
+  or Workflow call goes on, waypoint's hook may read one capped file (an agent definition of at most
+  64 KiB, a Workflow script of at most 256 KiB); it then passes the call on unchanged, and a fault in
+  the hook lets the call through. A router warning (R1 to R3 on an Agent call, R2 on a Workflow call)
+  is logged, toasted and added to context only after the call has gone on and only when it was not
+  denied. The other `tool.call` hooks act after the call has run.
 
 ## 15. Code layout and engine constraints
 

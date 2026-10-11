@@ -130,7 +130,24 @@ const SURFACE_MS = 15_000
 // within seconds of the last one ending.
 export const RUN_QUIET_MS = MIN
 const PROMPT_HEAD = 2000
-const BLOCKED = /^\s*BLOCKED\b[ \t]*:?[ \t]*(.*)$/m
+const BLOCKED_HEAD = 4096
+
+// The text after BLOCKED on the first line, in the first BLOCKED_HEAD characters of an answer, whose
+// first word is BLOCKED (SPEC 3), an optional `:` dropped; undefined when there is none. String
+// operations only: no pattern runs over the whole answer.
+function blockedReason(answer: string): string | undefined {
+  for (const line of answer.slice(0, BLOCKED_HEAD).split(/[\n\r\u2028\u2029]/)) {
+    const t = line.trimStart()
+    if (!t.startsWith('BLOCKED') || /[A-Za-z0-9_]/.test(t.charAt(7))) continue
+    let rest = t.slice(7)
+    let k = 0
+    while (rest[k] === ' ' || rest[k] === '\t') k++
+    if (rest[k] === ':') k++
+    rest = rest.slice(k)
+    return rest.trim()
+  }
+  return undefined
+}
 const LOG_MAX = 200
 
 const ZERO: Tokens = { in: 0, out: 0, cacheRead: 0, cacheWrite: 0 }
@@ -669,10 +686,10 @@ export function completeAgent(
   let question: string | undefined
   let reason: string | undefined
   if (ev.reason === 'answer') {
-    const m = BLOCKED.exec(ev.answer)
-    if (m) {
+    const why = blockedReason(ev.answer)
+    if (why !== undefined) {
       status = 'blocked'
-      question = m[1].trim().slice(0, 200)
+      question = why.slice(0, 200)
     } else status = 'done'
   } else reason = ev.reason
   const counted = r.tokens.in + r.tokens.out + r.tokens.cacheRead + r.tokens.cacheWrite > 0

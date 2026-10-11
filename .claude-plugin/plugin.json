@@ -1,6 +1,6 @@
 {
   "name": "waypoint",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Plan, task and agent progress beside your prompt",
   "author": { "name": "atharv6f" },
   "license": "MIT",

@@ -271,9 +271,9 @@ const STEP_TITLE = 60
 const STATE_FINISHED = 20
 
 function who(a: AgentRecord): string {
-  const role = roleText(a)
+  const role = clean(roleText(a))
   const what = clean(a.label ?? a.description)
-  return a.id + ' ' + (role === '' ? '—' : role) + (role === what ? '' : ' "' + what + '"') + (a.name ? ' (name: ' + clean(a.name) + ')' : '')
+  return clean(a.id) + ' ' + (role === '' ? '—' : role) + (role === what ? '' : ' "' + what + '"') + (a.name ? ' (name: ' + clean(a.name) + ')' : '')
 }
 
 // The goal line names the active source by its tag; a file also by its path and section.
@@ -284,13 +284,14 @@ function goalLine(d: StateData): string {
   const source = f ? 'file: ' + clean(f.file) + (f.section ? ' § ' + clean(f.section) : '') : tag
   const g = d.goal
   if (g === null) return 'goal: ' + clean(f ? f.section ?? f.file : tag) + ' — not read yet (' + source + ')'
-  return 'goal: ' + clean(g.label) + ' — ' + formatCounts(g) + ' (' + source + ')' + (g.error !== undefined ? ' — plan unreadable: ' + clean(g.error) : '')
+  return 'goal: ' + clean(g.label) + ' — ' + clean(formatCounts(g)) + ' (' + source + ')' + (g.error !== undefined ? ' — plan unreadable: ' + clean(g.error) : '')
 }
 
 function currentLine(c: CurrentData | undefined): string {
   if (c === undefined) return 'current: none'
   const done = c.status === 'partial' ? 'in progress' : c.unit === 'items' ? c.done + '/' + c.total + ' items done' : c.done + '/' + c.total + ' agents finished'
-  return 'current: ' + c.id + (c.title !== '' ? ' ' + c.title : '') + ' — ' + done
+  const title = clean(c.title)
+  return 'current: ' + clean(c.id) + (title !== '' ? ' ' + title : '') + ' — ' + done
 }
 
 function logText(log: LogEntry[], n: number): string {
@@ -322,11 +323,11 @@ export function stateBlock(d: StateData): string {
   // The unmatched agents of one workflow run are listed together, after the others, under the run's title.
   const runs = looseGroups(real.filter((a) => !matchedToPlan(a))).groups.filter((g) => g.kind === 'run')
   const inRun = new Set(runs.flatMap((g) => g.agents))
-  const entry = (a: AgentRecord) => '[' + a.status + '] ' + who(a) + ' ' + modelEffort(a) + ' ' + formatAgo(elapsed(a, d.now))
+  const entry = (a: AgentRecord) => '[' + a.status + '] ' + who(a) + ' ' + clean(modelEffort(a)) + ' ' + formatAgo(elapsed(a, d.now))
   const blocks = [listed.filter((a) => !inRun.has(a)).map(entry).join(' · ')]
   for (const g of runs) {
     const mine = listed.filter((a) => g.agents.includes(a))
-    if (mine.length > 0) blocks.push('run "' + g.title + '": ' + mine.map(entry).join(' · '))
+    if (mine.length > 0) blocks.push('run "' + clean(g.title) + '": ' + mine.map(entry).join(' · '))
   }
   lines.push(
     real.length === 0

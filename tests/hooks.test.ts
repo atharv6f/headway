@@ -137,10 +137,13 @@ test('router: the note is appended to a context the result already has', async (
 test('router: a deny result is returned unchanged, with no context and no pending mark', async ($, on) => {
   mock.clock(on, { now: 0 })
   const st = watchState(on)
-  toolBeneath(on, () => ({ deny: 'no agents today' }))
+  const toasts = toolBeneath(on, () => ({ deny: 'no agents today' }))
   beneath(on, ['ag3'])
   const result = await $.tool.call({ tool: 'Agent', description: 'd', subagent_type: 'scout', prompt: 'p', tool_use_id: 'toolu_a3' })
   expect(result).toEqual({ deny: 'no agents today' })
+  // R1 is said only for a call that went on: a denied one leaves no log entry and no toast
+  expect(st.log()).toEqual([])
+  expect(toasts).toEqual([])
   // a later spawn under the same id does not inherit the denied call's warning
   await $.agent.spawn(spawnInput({ tool_use_id: 'toolu_a3', subagentType: 'scout' }))
   expect((st.agents()[0] as Rec & { warnings: string[] }).warnings).toEqual([])
@@ -272,6 +275,21 @@ test('router: a clean script, a named workflow and a denied call add no context;
   expect(toasts).toEqual([])
   expect(st.agents().length).toBe(1) // planned, with its phase and model, but no warning
   expect((await $.tool.call({ tool: 'Workflow', name: 'built-in', tool_use_id: 'toolu_n' })).context).toBe(undefined)
+})
+
+test('router: R2 is logged, toasted and noted only once the Workflow call goes on; a denied call leaves no trace of it', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  const st = watchState(on)
+  let deny = true
+  const toasts = toolBeneath(on, () => (deny ? { deny: 'not now' } : { result: { runId: 'wf_r2' } }))
+  expect(await $.tool.call({ tool: 'Workflow', script: SCRIPT, tool_use_id: 'toolu_r2a' })).toEqual({ deny: 'not now' })
+  expect(toasts).toEqual([])
+  expect(JSON.stringify(st.log())).not.toContain('tiny')
+  deny = false
+  const ran = await $.tool.call({ tool: 'Workflow', script: SCRIPT, tool_use_id: 'toolu_r2b' })
+  expect(ran.context).toEqual([R2_TINY])
+  expect(toasts).toEqual([R2_TINY])
+  expect(st.log()).toMatchObject([{ kind: 'warn', ref: 'R2' }])
 })
 
 test('router: a denied Workflow call returns unchanged and leaves no planned agents', async ($, on) => {
@@ -642,7 +660,7 @@ test('theme: a quiet session only stats the store file, every tenth second, and 
   expect(t.calls.lists).toBe(lists)
   const storeStats = t.calls.stats.filter((p) => p.includes('/plugins/store/')).length
   expect(storeStats).toBeGreaterThan(0)
-  expect(storeStats).toBeLessThanOrEqual(31)
+  expect(storeStats).toBeLessThanOrEqual(32) // 30 ticks, the mtime at the read, and the size stat before the read
   expect(t.calls.stats.filter((p) => !p.includes('/plugins/store/') && !p.endsWith('waypoint-roles.json')).length).toBe(0)
   expect(t.calls.processes).toBe(0)
 })
@@ -666,4 +684,24 @@ test('theme: nothing in the plugin starts a subprocess, however long a tracked s
   await $.tool.call({ tool: 'mcp__waypoint__waypoint', tool_use_id: 'a', action: 'track', file: '/w/plan.md' })
   await t.clock.advance(5 * 60_000)
   expect(t.calls.processes).toBe(0)
+})
+
+test('router: R1 and R3 are logged and toasted only once next(e) has answered, and not for a denied call', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  const st = watchState(on)
+  let seen: { logs: number; toasts: number } | undefined
+  let deny = false
+  const toasts = toolBeneath(on, () => {
+    seen = { logs: st.log().length, toasts: toasts.length }
+    return deny ? { deny: 'not now' } : { result: 'ok' }
+  })
+  const input = { tool: 'Agent', description: 'R02-41 scope read', subagent_type: 'scout', prompt: 'p', tool_use_id: 'toolu_o1' }
+  await $.tool.call(input)
+  expect(seen).toEqual({ logs: 0, toasts: 0 }) // nothing was said before the call went on
+  expect(toasts).toEqual([R1_SCOUT])
+  expect(st.log().map((l) => l.kind)).toEqual(['warn'])
+  deny = true
+  expect(await $.tool.call({ ...input, tool_use_id: 'toolu_o2' })).toEqual({ deny: 'not now' })
+  expect(toasts).toEqual([R1_SCOUT]) // still only the first
+  expect(st.log().length).toBe(1)
 })

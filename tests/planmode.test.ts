@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
-import { parsePlanMode } from '../hooks/planmode.ts'
-import { TASKS_MAX, TITLE_MAX } from '../hooks/format.ts'
+import { numberedLine, parsePlanMode, plainTitle } from '../hooks/planmode.ts'
+import { parseThemeFile } from '../hooks/theme.ts'
+import { promptLabel } from '../hooks/sources.ts'
+import { clean, TASKS_MAX, TITLE_MAX, truncate } from '../hooks/format.ts'
 import type { PlanMode } from '../hooks/planmode.ts'
 import { planModeSteps } from './count.ts'
 import { text as bullets } from './fixtures/plan-bullets.ts'
@@ -203,4 +205,120 @@ test('ingest caps: a 1000-character title, step titles and heading ids are one c
   expect(h.groups.every((g) => g.id.length <= TITLE_MAX && g.title.length <= TITLE_MAX)).toBe(true)
   const many = parsePlanMode('# Plan: Many\n\n' + Array.from({ length: 300 }, (_, i) => i + 1 + '. step ' + i).join('\n') + '\n')
   expect(many.steps.length).toBe(TASKS_MAX)
+})
+
+// ---------------------------------------------------------------- plainTitle against the regexes it replaced
+
+// The title cleaner as regexes, before it was made linear: the oracle for short strings (the regexes
+// are quadratic on long ones, which is why they are gone from hooks/planmode.ts).
+function legacyPlainTitle(s: string): string {
+  const emphasis = (t: string) =>
+    t
+      .replace(/\*\*(?=\S)(.+?)(?<=\S)\*\*/g, '$1')
+      .replace(/(?<![\p{L}\p{N}_])__(?=\S)(.+?)(?<=\S)__(?![\p{L}\p{N}_])/gu, '$1')
+      .replace(/~~(?=\S)(.+?)(?<=\S)~~/g, '$1')
+      .replace(/\*(?=\S)(.+?)(?<=\S)\*/g, '$1')
+      .replace(/(?<![\p{L}\p{N}_])_(?=\S)(.+?)(?<=\S)_(?![\p{L}\p{N}_])/gu, '$1')
+  const text = s.replace(/!?\[([^\]]*)\]\([^)\s]*(?:\s+"[^"]*")?\)/g, '$1')
+  let out = ''
+  let at = 0
+  for (const m of text.matchAll(/(`+)(?!`)(.+?)(?<!`)\1(?!`)/g)) {
+    out += emphasis(text.slice(at, m.index)) + m[2].trim()
+    at = m.index + m[0].length
+  }
+  return out + emphasis(text.slice(at))
+}
+
+test('plainTitle: the same text as the regexes it replaced, on 20000 short strings over the marker alphabet', async () => {
+  const alphabet = ['*', '*', '_', '_', '~', '`', '`', '[', ']', '(', ')', '!', '"', ' ', ' ', 'a', 'b', '1', '\n', '\u2028', 'é', '\ud83d\ude00']
+  let seed = 12345
+  const rand = (n: number) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed % n
+  }
+  for (let i = 0; i < 20000; i++) {
+    let t = ''
+    const len = 1 + rand(24)
+    for (let k = 0; k < len; k++) t += alphabet[rand(alphabet.length)]
+    expect(JSON.stringify(plainTitle(t))).toBe(JSON.stringify(legacyPlainTitle(t)))
+  }
+})
+
+test('numberedLine: the same match as the patterns it replaced, on 20000 short lines', async () => {
+  const alphabet = ['1', '2', '.', ')', ' ', ' ', '\t', 'a', '-', '\u2028', '\u2029', '\u00a0', '\ufeff']
+  let seed = 4242
+  const rand = (n: number) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return (seed >> 3) % n
+  }
+  for (let i = 0; i < 20000; i++) {
+    let t = ''
+    const len = rand(14)
+    for (let k = 0; k < len; k++) t += alphabet[rand(alphabet.length)]
+    const withIndent = /^(\s*)(\d+)[.)]\s+(.+)$/.exec(t)
+    expect(JSON.stringify(numberedLine(t, true)?.slice(1) ?? null)).toBe(JSON.stringify(withIndent ? [withIndent[1], withIndent[2], withIndent[3]] : null))
+    const bare = /^(\d+)[.)]\s+(.+)$/.exec(t)
+    expect(JSON.stringify(numberedLine(t, false)?.slice(1) ?? null)).toBe(JSON.stringify(bare ? ['', bare[1], bare[2]] : null))
+  }
+})
+
+test('parseThemeFile: the same blocks as the patterns it replaced, on 20000 short texts', async () => {
+  const slots = ['read', 'write', 'run', 'search', 'web', 'mcp', 'other', 'user', 'fg', 'muted', 'surface', 'zebra', 'ok', 'err', 'warn']
+  const block = (name: string) => name + ': {' + slots.map((x) => x + ": '#112233'").join(', ') + '}'
+  const pieces = [block('palette'), block('light'), 'palette: {', 'light: {', '}', ' ', '\n', '\n  ', '\t', 'x ', 'palette:', '\u2028', '\r', 'palette: { read', "'#abcdef'", ': ', '{']
+  let seed = 777
+  const rand = (n: number) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return (seed >> 3) % n
+  }
+  const legacyBlock = (text: string, key: string) => {
+    const m = new RegExp('^\\s*' + key + ':\\s*\\{([^}]*)\\}', 'm').exec(text)
+    if (!m) return undefined
+    const out: Record<string, string> = {}
+    const line = /\b(\w+):\s*'(#[0-9a-fA-F]{6})'/g
+    let hit: RegExpExecArray | null
+    while ((hit = line.exec(m[1])) !== null) if (slots.includes(hit[1])) out[hit[1]] = hit[2]
+    return slots.every((x) => out[x] !== undefined) ? out : undefined
+  }
+  const legacy = (text: string) => {
+    const palette = legacyBlock(text, 'palette')
+    if (!palette) return null
+    const light = legacyBlock(text, 'light')
+    return light ? { palette, light } : { palette }
+  }
+  let parsed = 0
+  for (let i = 0; i < 20000; i++) {
+    let t = ''
+    const len = 1 + rand(6)
+    for (let k = 0; k < len; k++) t += pieces[rand(pieces.length)]
+    const got = parseThemeFile(t)
+    if (got) parsed++
+    expect(JSON.stringify(got)).toBe(JSON.stringify(legacy(t)))
+  }
+  expect(parsed).toBeGreaterThan(200) // the comparison reached the parsing side, not only the refusals
+})
+
+test('promptLabel: the same label as the paste-tag pattern it replaced, on 20000 short prompts', async () => {
+  const pieces = ['<pasted_content', '</pasted_content', '<pasted_contents', '<pasted_content_x', '>', ' ', 'a', '\n', '\r', '\r\n', 'x=1', '<', '/', '"', 'pasted_content']
+  let seed = 99
+  const rand = (n: number) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return (seed >> 3) % n
+  }
+  const legacy = (text: string) => {
+    const line = text
+      .replace(/<\/?pasted_content\b[^>]*>/g, '')
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map((l) => clean(l))
+      .find((l) => l !== '')
+    return line === undefined ? undefined : truncate(line, 60)
+  }
+  for (let i = 0; i < 20000; i++) {
+    let t = ''
+    const len = 1 + rand(8)
+    for (let k = 0; k < len; k++) t += pieces[rand(pieces.length)]
+    if (t.trimStart().startsWith('/')) continue
+    expect(JSON.stringify(promptLabel(t, 'composer'))).toBe(JSON.stringify(legacy(t)))
+  }
 })

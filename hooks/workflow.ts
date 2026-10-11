@@ -16,7 +16,7 @@ export interface PlannedCall {
   hasModel: boolean // the options object has a `model:` key
   hasEffort: boolean
   dynamic: boolean // the options are not a plain object literal (a variable, a call, a spread): their keys are unknown
-  nesting: string[] // enclosing `parallel` / `pipeline` calls, outermost first
+  nesting: string[] // enclosing `parallel` / `pipeline` calls, outermost first; at most NESTING_MAX
 }
 
 export interface ParsedWorkflow {
@@ -26,159 +26,197 @@ export interface ParsedWorkflow {
   calls: PlannedCall[]
 }
 
-interface Span {
+export interface Span {
   start: number // index of the opening quote
   end: number // index just past the closing quote
   quote: string
   exprs: Array<[number, number]> // template substitutions, `${` .. `}` inclusive
 }
 
-interface Scanned {
+export interface Scanned {
   masked: string // same length as the source; literal contents and comments blanked
   spans: Map<number, Span> // by start index
+  close: Int32Array // by index of an opening bracket in `masked`: the index of the bracket closing it, else -1
 }
 
 const REGEX_AFTER = '(,=:[!&|?{};+-*%<>~^'
 const REGEX_AFTER_WORDS = ['return', 'typeof', 'await', 'yield', 'case', 'in', 'of', 'void', 'delete']
 
-function scan(src: string): Scanned {
+export function scan(src: string): Scanned {
+  const n = src.length
   const out = src.split('')
   const spans = new Map<number, Span>()
   const blank = (from: number, to: number) => {
-    for (let k = from; k < to && k < out.length; k++) if (out[k] !== '\n') out[k] = ' '
+    for (let k = from; k < to && k < n; k++) if (out[k] !== '\n') out[k] = ' '
   }
 
-  // Scans code from i until the end of the text, or, when `untilBrace`, the `}` that closes it.
-  function code(i: number, untilBrace: boolean): number {
-    let depth = 0
-    let last = '' // last significant character of the masked code
-    let lastWord = ''
-    while (i < src.length) {
-      const ch = src[i]
-      const next = src[i + 1]
-      if (ch === '/' && next === '/') {
-        let j = i
-        while (j < src.length && src[j] !== '\n') j++
-        blank(i, j)
-        i = j
-        continue
-      }
-      if (ch === '/' && next === '*') {
-        const j = src.indexOf('*/', i + 2)
-        const end = j < 0 ? src.length : j + 2
-        blank(i, end)
-        i = end
-        continue
-      }
-      if (ch === "'" || ch === '"') {
+  // One forward pass, never back: `stack` holds what is open, innermost last. Element 0 is the
+  // top-level code. Above it come template literals and, inside each, the code of a `${` substitution.
+  // Everything in a template is blanked with it, so only a literal, comment or regex outside every
+  // template, and the outermost template with its substitutions, are blanked here.
+  interface Code {
+    code: true
+    dollar: number // index of the `$` that opened this substitution (unused for the top level)
+    depth: number // `{` open in this substitution
+    last: string // last significant character of the masked code
+    lastWord: string
+  }
+  interface Template {
+    code: false
+    span: Span
+  }
+  const stack: Array<Code | Template> = [{ code: true, dollar: -1, depth: 0, last: '', lastWord: '' }]
+
+  // The template on top of the stack ends at `end`.
+  const closeTemplate = (end: number) => {
+    const { span } = stack.pop() as Template
+    span.end = end
+    spans.set(span.start, span)
+    if (stack.length === 1) {
+      blank(span.start + 1, end - 1)
+      for (const [a, b] of span.exprs) blank(a, b)
+    }
+    const outer = stack[stack.length - 1] as Code
+    outer.last = '`'
+    outer.lastWord = ''
+  }
+
+  let i = 0
+  while (i < n) {
+    const top = stack[stack.length - 1]
+    const ch = src[i]
+    if (!top.code) {
+      if (ch === '\\') i += 2
+      else if (ch === '`') {
+        closeTemplate(Math.min(i + 1, n))
+        i = Math.min(i + 1, n)
+      } else if (ch === '$' && src[i + 1] === '{') {
+        stack.push({ code: true, dollar: i, depth: 0, last: '', lastWord: '' })
+        i += 2
+      } else i++
+      continue
+    }
+    const outside = stack.length === 1 // not inside any template
+    const next = src[i + 1]
+    if (ch === '/' && next === '/') {
+      let j = i
+      while (j < n && src[j] !== '\n') j++
+      if (outside) blank(i, j)
+      i = j
+      continue
+    }
+    if (ch === '/' && next === '*') {
+      const j = src.indexOf('*/', i + 2)
+      const end = j < 0 ? n : j + 2
+      if (outside) blank(i, end)
+      i = end
+      continue
+    }
+    if (ch === "'" || ch === '"') {
+      let j = i + 1
+      while (j < n && src[j] !== ch && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1
+      const end = Math.min(j + 1, n)
+      spans.set(i, { start: i, end, quote: ch, exprs: [] })
+      if (outside) blank(i + 1, end - 1)
+      i = end
+      top.last = ch
+      top.lastWord = ''
+      continue
+    }
+    if (ch === '`') {
+      stack.push({ code: false, span: { start: i, end: n, quote: '`', exprs: [] } })
+      i++
+      continue
+    }
+    if (ch === '/') {
+      const after = top.last === '' || REGEX_AFTER.indexOf(top.last) >= 0 || REGEX_AFTER_WORDS.indexOf(top.lastWord) >= 0
+      if (after) {
         let j = i + 1
-        while (j < src.length && src[j] !== ch && src[j] !== '\n') j += src[j] === '\\' ? 2 : 1
-        const end = Math.min(j + 1, src.length)
-        spans.set(i, { start: i, end, quote: ch, exprs: [] })
-        blank(i + 1, end - 1)
-        i = end
-        last = ch
-        lastWord = ''
-        continue
-      }
-      if (ch === '`') {
-        const span: Span = { start: i, end: src.length, quote: '`', exprs: [] }
-        let j = i + 1
-        while (j < src.length) {
-          if (src[j] === '\\') {
-            j += 2
-            continue
-          }
-          if (src[j] === '`') break
-          if (src[j] === '$' && src[j + 1] === '{') {
-            const close = code(j + 2, true)
-            span.exprs.push([j, close])
-            j = close
-            continue
-          }
+        let inClass = false
+        while (j < n && src[j] !== '\n') {
+          if (src[j] === '\\') j++
+          else if (src[j] === '[') inClass = true
+          else if (src[j] === ']') inClass = false
+          else if (src[j] === '/' && !inClass) break
           j++
         }
-        span.end = Math.min(j + 1, src.length)
-        spans.set(i, span)
-        blank(i + 1, span.end - 1)
-        i = span.end
-        last = '`'
-        lastWord = ''
+        const end = Math.min(j + 1, n)
+        if (outside) blank(i + 1, end - 1)
+        i = end
+        top.last = '/'
+        top.lastWord = ''
         continue
       }
-      if (ch === '/') {
-        const after = last === '' || REGEX_AFTER.indexOf(last) >= 0 || REGEX_AFTER_WORDS.indexOf(lastWord) >= 0
-        if (after) {
-          let j = i + 1
-          let inClass = false
-          while (j < src.length && src[j] !== '\n') {
-            if (src[j] === '\\') j++
-            else if (src[j] === '[') inClass = true
-            else if (src[j] === ']') inClass = false
-            else if (src[j] === '/' && !inClass) break
-            j++
-          }
-          const end = Math.min(j + 1, src.length)
-          blank(i + 1, end - 1)
-          i = end
-          last = '/'
-          lastWord = ''
+    }
+    if (!outside) {
+      if (ch === '{') top.depth++
+      else if (ch === '}') {
+        if (top.depth === 0) {
+          // the substitution ends: back to the template around it
+          stack.pop()
+          ;(stack[stack.length - 1] as Template).span.exprs.push([top.dollar, i + 1])
+          i++
           continue
         }
+        top.depth--
       }
-      if (untilBrace) {
-        if (ch === '{') depth++
-        else if (ch === '}') {
-          if (depth === 0) {
-            return i + 1
-          }
-          depth--
-        }
-      }
-      if (/\s/.test(ch)) {
-        i++
-        continue
-      }
-      if (/[A-Za-z_$]/.test(ch)) {
-        let j = i
-        while (j < src.length && /[\w$]/.test(src[j])) j++
-        lastWord = src.slice(i, j)
-        last = 'a'
-        i = j
-        continue
-      }
-      last = ch
-      lastWord = ''
-      i++
     }
-    return src.length
+    if (/\s/.test(ch)) {
+      i++
+      continue
+    }
+    if (/[A-Za-z_$]/.test(ch)) {
+      let j = i
+      while (j < n && /[\w$]/.test(src[j])) j++
+      top.lastWord = src.slice(i, j)
+      top.last = 'a'
+      i = j
+      continue
+    }
+    top.last = ch
+    top.lastWord = ''
+    i++
   }
+  // The text ended inside templates and substitutions: each closes at the end, innermost first.
+  while (stack.length > 1) {
+    const top = stack[stack.length - 1]
+    if (top.code) {
+      stack.pop()
+      ;(stack[stack.length - 1] as Template).span.exprs.push([top.dollar, n])
+    } else closeTemplate(n)
+  }
+  const masked = out.join('')
+  return { masked, spans, close: closings(masked) }
+}
 
-  code(0, false)
-  // Template substitutions are blanked whole: nothing in them is code to this parser.
-  spans.forEach((s) => {
-    for (const [a, b] of s.exprs) blank(a, b)
-  })
-  return { masked: out.join(''), spans }
+// The bracket closing each opening one, in one pass with a stack. A closer that does not match the
+// innermost open bracket leaves every bracket open at that point unclosed, as does the end of the text.
+function closings(masked: string): Int32Array {
+  const close = new Int32Array(masked.length).fill(-1)
+  const stack: number[] = []
+  const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}' }
+  for (let i = 0; i < masked.length; i++) {
+    const ch = masked[i]
+    if (pairs[ch] !== undefined) stack.push(i)
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      const open = stack.pop()
+      if (open === undefined) continue
+      if (pairs[masked[open]] === ch) close[open] = i
+      else stack.length = 0
+    }
+  }
+  return close
 }
 
 // Index of the bracket closing the one at `open` (masked text), or -1.
-function closeOf(masked: string, open: number): number {
-  const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}' }
-  const stack: string[] = []
-  for (let i = open; i < masked.length; i++) {
-    const ch = masked[i]
-    if (pairs[ch] !== undefined) stack.push(pairs[ch])
-    else if (ch === ')' || ch === ']' || ch === '}') {
-      if (stack.pop() !== ch) return -1
-      if (stack.length === 0) return i
-    }
-  }
-  return -1
+function closeOf(sc: Scanned, open: number): number {
+  return sc.close[open] ?? -1
 }
 
-// Top-level comma-separated pieces of (from, to), as [start, end) index pairs, blanks trimmed.
-function splitTop(masked: string, from: number, to: number): Array<[number, number]> {
+// Top-level comma-separated pieces of (from, to), as [start, end) index pairs, blanks trimmed. A
+// closed bracket is stepped over whole, so each piece of nested text is walked by its own call only.
+function splitTop(sc: Scanned, from: number, to: number): Array<[number, number]> {
+  const masked = sc.masked
   const pieces: Array<[number, number]> = []
   let depth = 0
   let start = from
@@ -189,8 +227,11 @@ function splitTop(masked: string, from: number, to: number): Array<[number, numb
   }
   for (let i = from; i < to; i++) {
     const ch = masked[i]
-    if (ch === '(' || ch === '[' || ch === '{') depth++
-    else if (ch === ')' || ch === ']' || ch === '}') depth--
+    if (ch === '(' || ch === '[' || ch === '{') {
+      const end = sc.close[i]
+      if (depth === 0 && end > i && end < to) i = end
+      else depth++
+    } else if (ch === ')' || ch === ']' || ch === '}') depth--
     else if (ch === ',' && depth === 0) {
       push(start, i)
       start = i + 1
@@ -234,12 +275,13 @@ interface Entry {
   valueEnd: number
 }
 
+const KEY = /[A-Za-z_$][\w$]*/y
+
 // The entries of the object literal whose braces are at [open, close].
 function entriesOf(src: string, sc: Scanned, open: number, close: number): Entry[] {
   const entries: Entry[] = []
-  for (const [a, b] of splitTop(sc.masked, open + 1, close)) {
-    const head = sc.masked.slice(a, b)
-    if (head.startsWith('...') || head[0] === '[') {
+  for (const [a, b] of splitTop(sc, open + 1, close)) {
+    if (sc.masked.startsWith('...', a) || sc.masked[a] === '[') {
       entries.push({ key: null, valueStart: a, valueEnd: b })
       continue
     }
@@ -250,8 +292,9 @@ function entriesOf(src: string, sc: Scanned, open: number, close: number): Entry
       key = unescape(src.slice(a + 1, quoted.end - 1))
       after = quoted.end
     } else {
-      const m = /^[A-Za-z_$][\w$]*/.exec(head)
-      if (!m) {
+      KEY.lastIndex = a
+      const m = KEY.exec(sc.masked)
+      if (!m || m.index + m[0].length > b) {
         entries.push({ key: null, valueStart: a, valueEnd: b })
         continue
       }
@@ -273,13 +316,13 @@ function entriesOf(src: string, sc: Scanned, open: number, close: number): Entry
 }
 
 function openBrace(sc: Scanned, a: number, b: number): number {
-  return sc.masked[a] === '{' && closeOf(sc.masked, a) === b - 1 ? a : -1
+  return sc.masked[a] === '{' && closeOf(sc, a) === b - 1 ? a : -1
 }
 
 // A `meta.phases` entry: a string literal, or an object whose `title:` is one. Else nothing.
 function phaseTitle(src: string, sc: Scanned, a: number, b: number): string | undefined {
   if (sc.masked[a] === '{') {
-    if (closeOf(sc.masked, a) !== b - 1) return undefined
+    if (closeOf(sc, a) !== b - 1) return undefined
     const title = entriesOf(src, sc, a, b - 1).find((e) => e.key === 'title')
     const v = title ? valueOf(src, sc, title.valueStart, title.valueEnd) : undefined
     return v?.kind === 'literal' ? v.value : undefined
@@ -293,16 +336,16 @@ function parseMeta(src: string, sc: Scanned): Pick<ParsedWorkflow, 'name' | 'des
   const m = /\bmeta\s*=\s*\{/.exec(sc.masked)
   if (!m) return out
   const open = m.index + m[0].length - 1
-  const close = closeOf(sc.masked, open)
+  const close = closeOf(sc, open)
   if (close < 0) return out
   for (const e of entriesOf(src, sc, open, close)) {
     if (e.key === 'name' || e.key === 'description') {
       const v = valueOf(src, sc, e.valueStart, e.valueEnd)
       if (v.kind === 'literal') out[e.key] = v.value
     } else if (e.key === 'phases' && sc.masked[e.valueStart] === '[') {
-      const end = closeOf(sc.masked, e.valueStart)
+      const end = closeOf(sc, e.valueStart)
       if (end < 0) continue
-      for (const [a, b] of splitTop(sc.masked, e.valueStart + 1, end)) {
+      for (const [a, b] of splitTop(sc, e.valueStart + 1, end)) {
         const v = phaseTitle(src, sc, a, b)
         if (v !== undefined) out.phases.push(v)
       }
@@ -316,6 +359,10 @@ interface Combinator {
   open: number
   close: number
 }
+
+// `nesting` names at most this many enclosing calls, so a deeply nested script costs no more than
+// this per call; only whether there are any is acted on.
+const NESTING_MAX = 8
 
 // Never throws: a script that cannot be read gives what was read before the fault. An escape that
 // is not a code point (`\u{110000}`) makes its agent() call dynamic; one in `meta` is skipped.
@@ -338,27 +385,33 @@ function parseInto(script: string, result: ParsedWorkflow): void {
     result.phases = []
   }
 
-  const combinators: Combinator[] = []
   const callRe = /(?<![\w$.])(agent|parallel|pipeline)\s*\(/g
-  const found: Array<{ name: string; open: number; close: number }> = []
+  const found: Combinator[] = []
   for (let m = callRe.exec(masked); m !== null; m = callRe.exec(masked)) {
     const open = m.index + m[0].length - 1
-    const close = closeOf(masked, open)
+    const close = closeOf(sc, open)
     if (close < 0) continue
     found.push({ name: m[1], open, close })
-    if (m[1] !== 'agent') combinators.push({ name: m[1], open, close })
   }
 
   const statements = phaseStatements(script, sc)
+  let stmt = 0 // statements before the current call: they are in source order, as the calls are
+  // The parallel and pipeline calls around the current one, outermost first. Brackets nest, so in
+  // source order the enclosing calls are a stack: one that closed before this call opens is left.
+  const around: Combinator[] = []
   for (const f of found) {
-    if (f.name !== 'agent') continue
-    const args = splitTop(masked, f.open + 1, f.close)
+    while (around.length > 0 && around[around.length - 1].close < f.open) around.pop()
+    if (f.name !== 'agent') {
+      around.push(f)
+      continue
+    }
+    const args = splitTop(sc, f.open + 1, f.close)
     const call: PlannedCall = {
       ordinal: result.calls.length + 1,
       hasModel: false,
       hasEffort: false,
       dynamic: false,
-      nesting: combinators.filter((c) => c.open < f.open && f.close < c.close).map((c) => c.name),
+      nesting: around.slice(0, NESTING_MAX).map((c) => c.name),
     }
     if (args.length > 1) {
       const [a, b] = args[args.length - 1]
@@ -381,9 +434,10 @@ function parseInto(script: string, result: ParsedWorkflow): void {
         }
       }
     }
+    while (stmt < statements.length && statements[stmt].open < f.open) stmt++
     if (call.phase === undefined) {
-      const stmt = statements.filter((st) => st.open < f.open).pop()
-      if (stmt?.value.kind === 'literal') call.phase = stmt.value
+      const last = statements[stmt - 1]
+      if (last?.value.kind === 'literal') call.phase = last.value
     }
     result.calls.push(call)
   }
@@ -413,9 +467,9 @@ function phaseStatements(src: string, sc: Scanned): PhaseStatement[] {
     }
     if (depth !== 0) return []
     const open = m.index + m[0].length - 1
-    const close = closeOf(masked, open)
+    const close = closeOf(sc, open)
     if (close < 0) return []
-    const args = splitTop(masked, open + 1, close)
+    const args = splitTop(sc, open + 1, close)
     out.push({ open, value: args.length === 0 ? { kind: 'dynamic' } : valueOf(src, sc, args[0][0], args[0][1]) })
   }
   return out

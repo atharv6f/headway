@@ -148,16 +148,33 @@ export function searchDirs(chain: { dirs: string[]; atHome: boolean }, gitAt: nu
 
 // The `model:` of a definition's frontmatter (the block between the first two `---` lines), quotes
 // and a trailing comment removed. `inherit`, an empty value and no model line give undefined.
+// Read line by line with string operations, so no pattern backtracks over a long line.
 export function definitionModel(text: string): string | undefined {
-  const front = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)
-  if (!front) return undefined
-  const line = /^model:[ \t]*(.*?)[ \t]*\r?$/m.exec(front[1] ?? '')
-  if (!line) return undefined
-  let v = (line[1] ?? '').trim()
-  const q = /^(["'])(.*?)\1/.exec(v)
-  v = q ? (q[2] ?? '') : v.replace(/\s+#.*$/, '')
-  v = v.trim()
-  return v === '' || v.toLowerCase() === 'inherit' ? undefined : v
+  const lines = (text.startsWith('\uFEFF') ? text.slice(1) : text).split('\n')
+  if (lines[0].trimEnd() !== '---') return undefined
+  let line: string | undefined
+  for (let i = 1; i < lines.length; i++) {
+    const l = lines[i].trimEnd()
+    if (l === '---') {
+      if (line === undefined) return undefined
+      let v = line.slice('model:'.length).trim()
+      const quote = v[0] === '"' || v[0] === "'" ? v.indexOf(v[0], 1) : -1
+      if (quote > 0) v = v.slice(1, quote)
+      else {
+        // a trailing comment: the first `#` after whitespace, and that whitespace, go
+        for (let k = 1; k < v.length; k++) {
+          if (v[k] === '#' && /\s/.test(v[k - 1])) {
+            v = v.slice(0, k)
+            break
+          }
+        }
+      }
+      v = v.trim()
+      return v === '' || v.toLowerCase() === 'inherit' ? undefined : v
+    }
+    if (line === undefined && l.startsWith('model:')) line = l
+  }
+  return undefined
 }
 
 // R3: a model family outside the role's set. At dispatch `model` is the call's, else the model the

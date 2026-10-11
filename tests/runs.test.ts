@@ -165,6 +165,24 @@ test('state: current names the workflow group; the agents line groups the run on
   expect(agentsLine).toContain('(ids are for SendMessage)')
 })
 
+test('state: every id and title a file, a script or a model wrote is one clean line (newline, ESC, BEL)', async () => {
+  const r = parsePlan('- [ ] T1 first\u001b]0;pwned\u0007 step\u001b[31m\n')
+  const filePlan = r.ok ? r.plan : null
+  expect(filePlan).not.toBe(null)
+  const runAgents = runOf(RUN, 1, 'Probe\nthree\u001b[2J readers').map((a) => ({ ...a, id: a.id + '\u001b[31m', label: 'read\ner\u0007', model: 'claude-\u001b[1mx' }))
+  const goal = { label: 'g', done: 0, partial: 1, open: 0, total: 1, doneWord: 'do\u001b[2Jne', partialWord: 'ha\nlf', noDoneRule: false }
+  const fileBlock = stateBlock({ source: 'file', filter: { file: '/w/p.md' }, goal, current: bandCurrent(filePlan, [], 'T1').current, agents: [], log: [], usage: null, now: NOW, logEntries: 5 })
+  const runBlock = stateBlock({ filter: null, goal: null, current: bandCurrent(null, runAgents).current, agents: runAgents, log: [], usage: null, now: NOW, logEntries: 5 })
+  for (const block of [fileBlock, runBlock]) {
+    expect(/[\u0000-\u0009\u000b-\u001f\u007f]/.test(block)).toBe(false)
+    expect(block.split('\n').length).toBe(7) // goal, current, blocked, stalled, agents, log, context
+  }
+  expect(fileBlock).toContain('current: T1 first step')
+  expect(fileBlock).toContain('goal: g — done 0 · ha lf 1 · open 0 / 1 (file: /w/p.md)')
+  expect(runBlock).toContain('current: Probe three readers')
+  expect(runBlock).toContain('run "Probe three readers": [queued] ' + RUN + '-a1 read er claude-x ')
+})
+
 // ---------------------------------------------------------------- through the hooks
 
 const SCRIPT = (meta: string) => `export const meta = ${meta}

@@ -51,7 +51,7 @@ test('track: only the approved plan file, by its normalised path, is a no-op nam
   expect((w.last.filter as { file: string }).file).toBe(OTHER_PLAN)
 })
 
-test('track: the approved file stays a no-op after the approval turn while the plan is unfinished; once it is done, track pins it', async ($, on) => {
+test('track: the approved file stays a no-op after the approval turn while the plan is unfinished; once it is done, the tool refuses it unread', async ($, on) => {
   const w = world(on, { files: FILES, env: ENV })
   approving(on)
   on('turn.complete', async () => ({ text: '' }))
@@ -60,10 +60,13 @@ test('track: the approved file stays a no-op after the approval turn while the p
   await mainTurnEnds($)
   await tool($, { action: 'report', updates: [{ id: '1', status: 'done' }, { id: '2', status: 'done' }, { id: '3', status: 'done' }] })
   expect(await tool($, { action: 'track', file: PLAN_FILE })).toBe('already tracking this plan from plan mode; use report updates with ' + IDS)
-  // the reviewer's trap: a finished plan no longer turns its file away with advice to send updates
+  // a finished plan no longer turns its file away with advice to send updates; the file is outside
+  // the project, so the tool refuses it without reading it (SPEC 14) and the user's own command pins it
   await tool($, { action: 'report', done: ['4'] })
   expect(await goalLine($)).toBe('goal: Tidy the notes folder — 4/4 done (plan)')
-  expect(await tool($, { action: 'track', file: PLAN_FILE })).toMatch(/^tracking \/home\/u\/\.claude\/plans\/some-plan\.md/)
+  expect(await tool($, { action: 'track', file: PLAN_FILE })).toBe('refused: outside the project; ask the user to run /waypoint track ' + PLAN_FILE)
+  expect(w.reads.filter((p) => p === PLAN_FILE)).toEqual([])
+  expect((await userCommand($, 'track ' + PLAN_FILE)).text).toMatch(/^tracking \/home\/u\/\.claude\/plans\/some-plan\.md/)
   expect((w.last.filter as { file: string }).file).toBe(PLAN_FILE)
 })
 

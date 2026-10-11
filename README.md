@@ -198,8 +198,9 @@ step ids `state` shows (`1`, `2`, … or `1.1`, `2.1`, … where numbering resta
 and the approval itself carries a short note that names the steps and the two calls to make (see
 [Trust](#trust)).
 Two things are also turned away, so a Claude that forgets cannot hide the plan: while the plan is
-unfinished, the tool's `track` of the plan's own file pins nothing and replies with the ids (another
-file, another plan file included, is pinned as usual); and a full `report` list in the turn of the
+unfinished, the tool's `track` of the plan's own file pins nothing, reads nothing and replies with
+the ids (any other file is held to the project as usual, so another plan file, and this one once
+the plan is finished, is refused unread); and a full `report` list in the turn of the
 approval is refused with the ids. That turn ends when Claude's turn completes, at the next prompt of
 any kind, or at Claude's first `updates` call; after it a full list replaces the plan as usual.
 
@@ -252,7 +253,10 @@ the agent attaches to that step. Otherwise it goes to its origin group.
 | `/waypoint status` | prints the `state` block: goal, current step, blocked and stalled agents, every agent with its short id (for SendMessage), the log, context and cost |
 | `/waypoint band off` · `band on` | hides or shows the band; remembered across sessions |
 
-Paths are made absolute against the session's working directory when pinned.
+Paths are made absolute against the session's working directory when pinned. `track`, `untrack` and
+`band off`/`on` run only when you type them at the prompt; run any other way (a message a model or
+another session wrote, a notification, another plugin, a scheduled prompt) they answer `refused: run
+this from the prompt`. `status` and the pane forms work from anywhere.
 
 | Key (pane focused) | Does |
 | :- | :- |
@@ -364,10 +368,9 @@ What waypoint does with your machine, in full:
 - **Network:** none. No fetch, no telemetry, no update check.
 - **Reads:** the plan file and group map you pin, anywhere, or that Claude pins through the tool's
   `track` action, only inside the project (where the path lands, links followed, must be under the
-  session directory; the plan-mode plan you approved, where it lands in the Claude Code config
-  directory's `plans`, is the one exception). A `/waypoint track` you did not type yourself at the
-  prompt (one in a message another session or a model wrote, a notification, another plugin's run,
-  a scheduled prompt) is held to the same rule. Such a pin is checked
+  session directory, with no exception: waypoint never reads a file in the Claude Code config
+  directory's `plans` for Claude; the plan you approve in plan mode reaches it with the approval).
+  A `/waypoint track` you did not type yourself at the prompt is refused. Such a pin is checked
   again at every read: waypoint resolves the path, checks where it lands and reads that resolved path,
   so a link swapped after the check is not followed; `<configDir>/waypoint-roles.json`
   if you create it; the Workflow script file by path (`scriptPath`, which the tool prefers to an
@@ -384,6 +387,14 @@ What waypoint does with your machine, in full:
   settings through `$.settings.read()` (to see whether skins is enabled); `$.session.usage()`,
   `$.agent.list()`, `$.config.list()` and the `CLAUDE_CONFIG_DIR`, `HOME`, `USERPROFILE`, `SKINS_THEME` and
   `COLORFGBG` variables.
+- **Sizes:** waypoint reads only a regular file, never a pipe or a device, and only up to a cap it
+  checks before the read: the plan file 2 MiB, a group map 256 KiB, a Workflow script file 256 KiB,
+  an agent definition 64 KiB, the role file 64 KiB, the skins store 256 KiB, a skins theme file 64 KiB,
+  a Claude Code task file 64 KiB (at most 500 task files per session). A larger plan file or group map
+  is refused with `file too large`; any other larger file is skipped, with one line in the debug log.
+  An inline Workflow script over 256 Ki characters is not parsed. Each parser runs in time linear in
+  its input: a plan line is read to its first 8 KiB, an agent's answer to its first 4 KiB when looking
+  for a BLOCKED line.
 - **What remains:** between resolving a path and reading it, a directory on the resolved path could
   still be swapped for a link; that takes write access to a directory inside the project or the config
   directory.
@@ -397,16 +408,19 @@ What waypoint does with your machine, in full:
   `guideClaude` is on; a one-line note after a dispatch that trips a router rule; the replies of
   the `waypoint` tool when Claude calls it. Nothing else.
 - **What Claude can do through the tool:** pin a file for waypoint to read (`track`), give a task
-  list, move statuses, set the focus, unpin. Claude can pin a file only inside the project, and so
-  can any `/waypoint track` you did not type at the prompt; you can pin any file. What waypoint reads reaches Claude through `state`, so this keeps the tool from
+  list, move statuses, set the focus, unpin. Claude can pin a file only inside the project; you can
+  pin any file. A `/waypoint track`, `untrack` or `band on|off` you did not type at the prompt is
+  refused. What waypoint reads reaches Claude through `state`, so this keeps the tool from
   becoming a way around Claude Code's own permissions. Nothing it sends is written to a file.
 - **Patterns and escapes:** no text from you, Claude or a file becomes a regex: plan IDs are matched as
   literal text and Workflow label patterns without a regex. Router warnings strip terminal escape
   sequences from every value they quote.
 - **What it never does:** deny or rewrite a tool call; retry or schedule an agent. Before an Agent
-  or Workflow call goes on, waypoint's hook may read a small file (an agent definition, the
-  Workflow script) and show a toast; it then passes the call on unchanged, and a fault in the hook
-  lets the call through. Its other tool hooks act after the call has run.
+  or Workflow call goes on, waypoint's hook may read one capped file (an agent definition of at most
+  64 KiB, a Workflow script of at most 256 KiB); it then passes the call on unchanged, and a fault in
+  the hook lets the call through. A router warning (R1 to R3 on an Agent call, R2 on a Workflow call)
+  is logged, shown and added to context only after the call has gone on, never for a call that was
+  denied. Its other tool hooks act after the call has run.
 
 Two pieces of text waypoint adds to Claude's context on its own. The first is the guidance section. It is
 153 words, costs about 150 words of system prompt per session (on the session side of the cache
@@ -494,9 +508,10 @@ at any width; a pane the mod opens on its own below 110 columns is drawn inside 
 `/waypoint close` closes either.
 
 **`refused: ...` from `track`.** The text names the cause: `section not found: <text>`, `column not
-found: <name>`, `partial column not found: <name>`, `unknown argument: <word>`, and, for Claude's
-`track` or a `/waypoint track` you did not type, `outside the project; ask the user to run /waypoint
-track <path>`.
+found: <name>`, `partial column not found: <name>`, `unknown argument: <word>`, `file too large:
+<path>` (a plan file over 2 MiB, a group map over 256 KiB), `not a regular file: <path>`, for
+Claude's `track` `outside the project; ask the user to run /waypoint track <path>`, and for a
+`/waypoint track` you did not type `run this from the prompt`.
 Nothing changes on a refusal; the previous pin, if any, stays.
 
 ## Licence

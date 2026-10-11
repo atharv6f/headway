@@ -170,6 +170,35 @@ test('resume: the list is rebuilt from the task files, over the saved one', asyn
   expect(await goalLine($)).toMatch(/— 2\/3 done \(tasks\)$/)
 })
 
+test('resume: a task file over 64 KiB or not a regular file is skipped with one debug line; at most 500 task files are read', async ($, on) => {
+  const logs: string[] = []
+  on('ui.log', async (_$, e) => {
+    logs.push(String(e.text))
+    return { value: undefined }
+  })
+  const dir = CFG + '/tasks/s-cap/'
+  const files: Record<string, string> = {
+    [dir + '1.json']: file('1', 'pending', 'small'),
+    [dir + '2.json']: file('2', 'pending', 'big') + ' '.repeat(64 * 1024),
+    [dir + '3.json']: file('3', 'pending', 'pipe'),
+    [dir + '4.json']: file('4', 'pending', 'edge').padEnd(64 * 1024, ' '),
+  }
+  for (let i = 0; i < 600; i++) files[dir + 'z' + i + '.json'] = file('z' + i, 'pending', 'filler ' + i)
+  const w = world(on, { files, sessionId: 's-cap', env: { CLAUDE_CONFIG_DIR: CFG } })
+  w.kinds[dir + '3.json'] = 'fifo'
+  await start($)
+  await $.classic.SessionStart({ source: 'resume', session_id: 's-cap' })
+  const ids = (w.last.tasks as Array<{ id: string }>).map((t) => t.id)
+  expect(ids.slice(0, 2)).toEqual(['1', '4']) // the small file and the one of exactly 64 KiB
+  expect(ids.includes('2') || ids.includes('3')).toBe(false)
+  expect(w.reads.filter((p) => p.startsWith(dir))).not.toContain(dir + '2.json')
+  expect(w.reads.filter((p) => p.startsWith(dir)).length).toBeLessThanOrEqual(500)
+  expect(w.reads.filter((p) => p.startsWith(dir)).length).toBeGreaterThan(400) // the cap bounds the reads, it does not stop them
+  expect(logs.filter((l) => l.includes('2.json'))).toHaveLength(1)
+  expect(logs.filter((l) => l.includes('3.json'))).toHaveLength(1)
+  expect(logs.filter((l) => l.includes('over 500'))).toHaveLength(1)
+})
+
 test('resume with no record: the task files alone give the list; HOME is the config dir when CLAUDE_CONFIG_DIR is unset', async ($, on) => {
   const files = { '/home/u/.claude/tasks/s-new/1.json': file('1', 'in_progress', 'only') }
   const w = world(on, { files, sessionId: 's-new', env: { HOME: '/home/u' } })

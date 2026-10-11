@@ -9,6 +9,7 @@ const CFG = '/h/.claude'
 const ENV = { HOME: '/h' }
 const SECRET = '- [ ] S1 the secret line\n'
 const OUTSIDE = 'refused: outside the project; ask the user to run /waypoint track '
+const FROM_PROMPT = 'refused: run this from the prompt'
 
 async function tool($, input: Record<string, unknown>): Promise<string> {
   return (await $.tool.call({ tool: TOOL, tool_use_id: 'toolu_t', ...input })).result as string
@@ -57,74 +58,135 @@ test('tool track: a group map outside the project is refused; the project is its
 
 // ---------------------------------------------------------------- who runs /waypoint track
 
-test('command track: only the user typing it is unrestricted; a run from any other origin is held to the project like the tool', async ($, on) => {
+test('command: from any origin but the prompt, track, untrack and band are refused and touch nothing', async ($, on) => {
   const w = world(on, { files: { '/w/plan.md': PLAN, '/h/.ssh/config': SECRET }, env: ENV })
   await start($)
+  expect((await command($, 'track plan.md')).text).toMatch(/^tracking \/w\/plan\.md/)
+  const touched = w.touched.length
+  const writes = w.writes.length
   // a model-authored message (another session's SendMessage), a relay, a notification, another plugin's
   // $.command.run, a scheduled prompt, a run with no stamp: none is the user's own gesture
   for (const kind of ['peer-send-message', 'peer', 'task-notification', 'coordinator', 'channel', 'plugin', 'scheduled-trigger', 'unclassified', undefined]) {
-    expect(String(kind) + ': ' + (await commandFrom($, kind, 'track /h/.ssh/config')).text).toBe(String(kind) + ': ' + OUTSIDE + '/h/.ssh/config')
+    for (const args of ['track /h/.ssh/config', 'track plan.md', 'track nope.md bogus=1', 'untrack', 'band off', 'band on']) {
+      expect(String(kind) + ' ' + args + ': ' + (await commandFrom($, kind, args)).text).toBe(String(kind) + ' ' + args + ': ' + FROM_PROMPT)
+    }
   }
-  expect(w.reads.filter((p) => p === '/h/.ssh/config')).toEqual([])
-  expect(w.last.filter ?? null).toBe(null)
-  // inside the project such a run pins, and the pin carries the project bound
-  expect((await commandFrom($, 'peer-send-message', 'track plan.md')).text).toMatch(/^tracking \/w\/plan\.md/)
-  expect((w.last.filter as { bounds?: unknown }).bounds).toEqual({ file: '/w' })
+  expect(w.touched.slice(touched).filter((p) => p !== '/w/plan.md')).toEqual([]) // only the pinned plan's own poll
+  expect(w.writes.slice(writes)).toEqual([])
+  expect((w.last.filter as { file: string }).file).toBe('/w/plan.md')
+  expect(w.store.band).toBe(undefined)
   // the user's own command pins anything, unbounded
   expect((await command($, 'track /h/.ssh/config')).text).toMatch(/^tracking \/h\/\.ssh\/config/)
   expect((w.last.filter as { bounds?: unknown }).bounds).toBe(undefined)
 })
 
-// The plan-mode exemption takes only a file under <configDir>/plans/, as Claude Code reported it.
+test('command: status and the pane forms answer from any origin', async ($, on) => {
+  const w = world(on, { files: { '/w/plan.md': PLAN }, env: ENV })
+  await start($)
+  expect((await commandFrom($, 'peer-send-message', 'status')).text).toMatch(/^goal: nothing tracked/)
+  await commandFrom($, 'plugin', '')
+  expect(w.opens.length).toBe(1)
+  await commandFrom($, 'task-notification', 'close')
+  expect(w.closes.length).toBe(1)
+  await commandFrom($, undefined, 'agents')
+  expect(w.opens.length).toBe(2)
+})
+
+// Claude never pins a file under <configDir>/plans/: the plan-mode plan comes from the ExitPlanMode
+// result, and a track of the approved file is answered without reading it.
 const PLANS = CFG + '/plans'
 const PROSE = 'Just some prose, no steps.\n'
+const STEPS = '- [ ] A1 first\n- [ ] A2 second\n'
+const ALREADY = 'already tracking this plan from plan mode; use report updates with ids: '
 
-test('plan mode: an approval naming a file outside <configDir>/plans/ opens no exemption; Claude cannot pin that file', async ($, on) => {
-  const w = world(on, { files: { '/w/plan.md': PLAN, '/h/.ssh/config': SECRET, [PLANS + '/p.md']: PROSE }, env: ENV })
-  // the engine's result names the file it saved; the call's own planFilePath says otherwise
+test('plan mode: Claude\'s track of another file under <configDir>/plans/ is refused and never read', async ($, on) => {
+  const w = world(on, { files: { '/w/plan.md': PLAN, [PLANS + '/p.md']: STEPS, [PLANS + '/q.md']: SECRET }, env: ENV })
   on('tool.call', async (_$, e) => ({ result: { plan: e.plan, isAgent: false, filePath: PLANS + '/p.md' } }))
   await start($)
-  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p1', plan: PROSE, planFilePath: '/h/.ssh/config' })
-  expect(await tool($, { action: 'track', file: '/h/.ssh/config' })).toBe(OUTSIDE + '/h/.ssh/config')
-  expect(w.reads.filter((p) => p === '/h/.ssh/config')).toEqual([])
+  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p1', plan: STEPS, planFilePath: PLANS + '/p.md' })
+  expect(await tool($, { action: 'track', file: PLANS + '/q.md' })).toBe(OUTSIDE + PLANS + '/q.md')
+  expect(w.reads.filter((p) => p.startsWith(PLANS))).toEqual([])
   expect(w.last.filter ?? null).toBe(null)
 })
 
-test('plan mode: even as the engine reports it, an approved file outside <configDir>/plans/ is held to the project', async ($, on) => {
-  const w = world(on, { files: { '/w/plan.md': PLAN, '/h/.ssh/config': SECRET }, env: ENV })
-  on('tool.call', async (_$, e) => ({ result: { plan: e.plan, isAgent: false, filePath: '/h/.ssh/config' } }))
+test('plan mode: a track of the approved file while its plan is drawn answers with the ids and touches nothing', async ($, on) => {
+  const w = world(on, { files: { '/w/plan.md': PLAN, [PLANS + '/p.md']: STEPS }, env: ENV })
+  on('tool.call', async (_$, e) => ({ result: { plan: e.plan, isAgent: false, filePath: PLANS + '/p.md' } }))
   await start($)
-  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p2', plan: PROSE, planFilePath: '/h/.ssh/config' })
-  expect(await tool($, { action: 'track', file: '/h/.ssh/config' })).toBe(OUTSIDE + '/h/.ssh/config')
-  expect(w.reads.filter((p) => p === '/h/.ssh/config')).toEqual([])
+  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p2', plan: STEPS, planFilePath: PLANS + '/p.md' })
+  expect(await tool($, { action: 'track', file: PLANS + '/p.md' })).toBe(ALREADY + 'A1, A2')
+  expect(w.touched.filter((p) => p.startsWith(PLANS))).toEqual([])
+  // under a pinned file the plan is not drawn: the approved file is outside the project like any other
+  expect((await command($, 'track plan.md')).text).toMatch(/^tracking \/w\/plan\.md/)
+  expect(await tool($, { action: 'track', file: PLANS + '/p.md' })).toBe(OUTSIDE + PLANS + '/p.md')
+  expect(w.reads.filter((p) => p.startsWith(PLANS))).toEqual([])
+  expect((w.last.filter as { file: string }).file).toBe('/w/plan.md')
 })
 
-test('plan mode: a rejected call carried across "clear context" opens no exemption outside <configDir>/plans/', async ($, on) => {
-  const w = world(on, { files: { '/w/plan.md': PLAN, '/h/.ssh/config': SECRET }, env: ENV, sessionId: 's-1' })
-  on('tool.call', async () => ({ result: 'rejected', isError: true }))
+test('plan mode: an approved file the engine or the call names, with no steps drawn, is outside the project and never read', async ($, on) => {
+  const w = world(on, { files: { '/w/plan.md': PLAN, '/h/.ssh/config': SECRET, [PLANS + '/p.md']: PROSE }, env: ENV, sessionId: 's-1' })
+  let reply: Record<string, unknown> = { result: { plan: PROSE, isAgent: false, filePath: '/h/.ssh/config' } }
+  on('tool.call', async () => reply)
   on('turn.complete', async () => ({ text: '' }))
   await start($)
-  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p3', plan: PROSE, planFilePath: '/h/.ssh/config' })
+  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p3', plan: PROSE, planFilePath: PLANS + '/p.md' })
+  expect(await tool($, { action: 'track', file: '/h/.ssh/config' })).toBe(OUTSIDE + '/h/.ssh/config')
+  reply = { result: { plan: PROSE, isAgent: false, filePath: PLANS + '/p.md' } }
+  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p4', plan: PROSE, planFilePath: PLANS + '/p.md' })
+  expect(await tool($, { action: 'track', file: PLANS + '/p.md' })).toBe(OUTSIDE + PLANS + '/p.md')
+  // a rejected call carried across "clear context"
+  reply = { result: 'rejected', isError: true }
+  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p5', plan: PROSE, planFilePath: '/h/.ssh/config' })
   w.setSessionId('s-2')
   await $.classic.SessionStart({ source: 'clear', session_id: 's-2' })
   expect(await tool($, { action: 'track', file: '/h/.ssh/config' })).toBe(OUTSIDE + '/h/.ssh/config')
-  expect(w.reads.filter((p) => p === '/h/.ssh/config')).toEqual([])
+  expect(w.reads.filter((p) => p === '/h/.ssh/config' || p.startsWith(PLANS))).toEqual([])
+  expect(w.last.filter ?? null).toBe(null)
 })
 
-test('plan mode: the approved file under <configDir>/plans/ is pinned for Claude, bounded to that directory; a link out of it is not', async ($, on) => {
-  const w = world(on, { files: { '/w/plan.md': PLAN, [PLANS + '/p.md']: '- [ ] a\n', [PLANS + '/q.md']: PROSE, '/h/.ssh/config': SECRET }, env: ENV })
-  let file = PLANS + '/p.md'
-  on('tool.call', async (_$, e) => ({ result: { plan: e.plan, isAgent: false, filePath: file } }))
+// ---------------------------------------------------------------- what a read may be
+
+const MIB = 1024 * 1024
+const KIB = 1024
+
+test('track: a plan file over 2 MiB or a group map over 256 KiB is refused unread; exactly the cap is read', async ($, on) => {
+  const w = world(on, {
+    files: {
+      '/w/plan.md': PLAN,
+      '/w/big.md': '- [ ] T1 a\n' + 'x'.repeat(2 * MIB),
+      '/w/edge.md': '- [ ] T1 a\n'.padEnd(2 * MIB, 'x'),
+      '/w/g.json': '{"groups":[]}'.padEnd(256 * KIB, ' '),
+      '/w/bigg.json': '{"groups":[]}'.padEnd(256 * KIB + 1, ' '),
+    },
+    env: ENV,
+  })
   await start($)
-  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p4', plan: PROSE, planFilePath: file })
-  expect(await tool($, { action: 'track', file: PLANS + '/p.md' })).toMatch(/^tracking \/h\/\.claude\/plans\/p\.md/)
-  expect((w.last.filter as { bounds?: unknown }).bounds).toEqual({ file: PLANS })
-  // the approved file is a link out of the plans directory: no exemption
-  file = PLANS + '/q.md'
-  w.real[file] = '/h/.ssh/config'
-  await $.tool.call({ tool: 'ExitPlanMode', tool_use_id: 'toolu_p5', plan: PROSE, planFilePath: file })
-  expect(await tool($, { action: 'track', file })).toBe(OUTSIDE + file)
-  expect(w.reads.filter((p) => p === '/h/.ssh/config' || p === file)).toEqual([])
+  expect((await command($, 'track big.md')).text).toBe('refused: file too large: big.md')
+  expect(await tool($, { action: 'track', file: 'big.md' })).toBe('refused: file too large: big.md')
+  expect((await command($, 'track plan.md groups=bigg.json')).text).toBe('refused: file too large: bigg.json')
+  expect(w.reads.filter((p) => p === '/w/big.md' || p === '/w/bigg.json')).toEqual([])
+  expect((await command($, 'track edge.md')).text).toMatch(/^tracking \/w\/edge\.md/)
+  expect((await command($, 'track plan.md groups=g.json')).text).toMatch(/^tracking \/w\/plan\.md/)
+  // a pinned plan that grows past the cap is not read on the poll; the goal says why
+  w.files['/w/plan.md'] = PLAN + 'x'.repeat(2 * MIB)
+  w.mtimes['/w/plan.md'] = 2
+  const reads = w.reads.length
+  await w.clock.advance(2000)
+  await settle()
+  expect(w.reads.slice(reads).filter((p) => p === '/w/plan.md')).toEqual([])
+  expect(goalOf(w)?.error).toBe('file too large: /w/plan.md')
+})
+
+test('track: a plan file or group map that is not a regular file (a pipe, a device, a directory) is refused unread', async ($, on) => {
+  const w = world(on, { files: { '/w/plan.md': PLAN, '/w/pipe.md': PLAN, '/w/dev.json': '{"groups":[]}', '/w/d/x.md': PLAN }, env: ENV })
+  w.kinds['/w/pipe.md'] = 'other'
+  w.kinds['/w/dev.json'] = 'other'
+  await start($)
+  expect((await command($, 'track pipe.md')).text).toBe('refused: not a regular file: pipe.md')
+  expect(await tool($, { action: 'track', file: 'pipe.md' })).toBe('refused: not a regular file: pipe.md')
+  expect((await command($, 'track plan.md groups=dev.json')).text).toBe('refused: not a regular file: dev.json')
+  expect((await command($, 'track d')).text).toBe('refused: not a regular file: d')
+  expect(w.reads.filter((p) => p === '/w/pipe.md' || p === '/w/dev.json' || p === '/w/d')).toEqual([])
 })
 
 // ---------------------------------------------------------------- a link swapped after the check
@@ -242,6 +304,25 @@ test('Workflow: the real path that was checked is what is read; a link swapped a
   await start($)
   expect((await workflow($, { scriptPath: '/w/link.js' })).context).toEqual([r2Of('fromfile', 'FILE-1')])
   expect(w.reads.filter((p) => p === '/w/link.js' || p === '/h/.ssh/s.js')).toEqual([])
+})
+
+test('Workflow: a script file over 256 KiB or not a regular file is not read; the inline script is parsed instead', async ($, on) => {
+  const w = workflowWorld(on, { '/w/wf/big.js': FILE_SCRIPT + '\n//' + 'x'.repeat(256 * KIB), '/w/wf/pipe.js': FILE_SCRIPT, '/w/wf/edge.js': (FILE_SCRIPT + '\n//').padEnd(256 * KIB, 'x') })
+  w.kinds['/w/wf/pipe.js'] = 'other'
+  await start($)
+  expect((await workflow($, { scriptPath: '/w/wf/big.js', script: INLINE_SCRIPT })).context).toEqual([r2Of('inline', 'INLINE-1')])
+  expect((await workflow($, { scriptPath: '/w/wf/pipe.js', script: INLINE_SCRIPT })).context).toEqual([r2Of('inline', 'INLINE-1')])
+  expect(w.reads.filter((p) => p === '/w/wf/big.js' || p === '/w/wf/pipe.js')).toEqual([])
+  expect((await workflow($, { scriptPath: '/w/wf/edge.js', script: INLINE_SCRIPT })).context).toEqual([r2Of('fromfile', 'FILE-1')])
+})
+
+test('Workflow: an inline script over 256 KiB is not parsed, and the call goes on', async ($, on) => {
+  workflowWorld(on, {})
+  await start($)
+  const big = await workflow($, { script: INLINE_SCRIPT + '\n//' + 'x'.repeat(256 * KIB) })
+  expect(big.context).toBe(undefined)
+  expect(big.result).toEqual({ runId: 'wf_t' })
+  expect((await workflow($, { script: (INLINE_SCRIPT + '\n//').padEnd(256 * KIB, 'x') })).context).toEqual([r2Of('inline', 'INLINE-1')])
 })
 
 // ---------------------------------------------------------------- agent definitions

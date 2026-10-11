@@ -90,13 +90,36 @@ export function parseStore(text: string | undefined | null, cwd: string): StoreS
   return { skin: prefs.skin, icons: prefs.icons, custom }
 }
 
+// The line a block key sits on, `key:` after nothing but whitespace: the `^\s*` of a multi-line pattern.
+function startsLine(text: string, at: number): boolean {
+  for (let i = at - 1; i >= 0; i--) {
+    const ch = text[i]
+    if (ch === '\n' || ch === '\r' || ch === '\u2028' || ch === '\u2029') return true
+    if (!/\s/.test(ch)) return false
+  }
+  return true
+}
+
+// `key: { ... }` at the start of a line: the first such block, its body running to the first `}`.
+// String scans, not one pattern over the file: a theme file is read to 64 KiB, and `^\s*key` tried at
+// every line start rescans every blank line after it.
 function readBlock(text: string, key: string): Palette | undefined {
-  const m = new RegExp('^\\s*' + key + ':\\s*\\{([^}]*)\\}', 'm').exec(text)
-  if (!m) return undefined
+  const head = key + ':'
+  let body: string | undefined
+  for (let at = text.indexOf(head); at >= 0 && body === undefined; at = text.indexOf(head, at + 1)) {
+    if (!startsLine(text, at)) continue
+    let open = at + head.length
+    while (open < text.length && /\s/.test(text[open])) open++
+    if (text[open] !== '{') continue
+    const close = text.indexOf('}', open + 1)
+    if (close < 0) return undefined // no `}` after this `{` is none after any later one
+    body = text.slice(open + 1, close)
+  }
+  if (body === undefined) return undefined
   const out: Record<string, string> = {}
   const line = /\b(\w+):\s*'(#[0-9a-fA-F]{6})'/g
   let hit: RegExpExecArray | null
-  while ((hit = line.exec(m[1])) !== null) if (isSlot(hit[1])) out[hit[1]] = hit[2]
+  while ((hit = line.exec(body)) !== null) if (isSlot(hit[1])) out[hit[1]] = hit[2]
   return SLOTS.every((s) => out[s] !== undefined) ? (out as Palette) : undefined
 }
 
