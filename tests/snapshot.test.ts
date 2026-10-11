@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { PLAN, snapshotState, start, TOOL, world } from './world.ts'
+import { PLAN, snapshotState, start, TOOL, transcripts, world } from './world.ts'
 
 // `$.state` as the engine serves it: every get of one dispatch reads the moment the dispatch began,
 // whatever is written meanwhile; a set given `ifVersion` that another write beat misses, and a get
@@ -59,6 +59,7 @@ function setup(on) {
   const w = world(on, { files: FILES, sessionId: 's-1', watchState: false })
   const st = snapshotState(on)
   on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ag1' }))
+  transcripts(on)('ag1', 'Reply ok')
   on('turn.complete', async () => ({ text: '' }))
   on('agent.list', async () => ({ value: [] }))
   on('ui.log', async () => ({ value: undefined })) // the unmocked registrations log here

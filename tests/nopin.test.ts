@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { bandLines, bandVisible } from '../plugin/hooks/band.tsx'
-import { PLAN, start, TOOL, world } from './world.ts'
+import { PLAN, start, TOOL, transcripts, world } from './world.ts'
 
 // The band with agents and no plan (SPEC 8.1): line 1 says no plan is pinned, line 2 carries the
 // agents; quiet only when nothing is pinned and no agent is still at work.
@@ -43,6 +43,7 @@ test('band: agents with no plan draw no plan and the agent line; once they finis
   on('ui.render', async (u, e) => u.ui.resolve(e).Text({ children: ['below'] }))
   on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ag1' }))
   on('turn.complete', async () => ({ text: '' }))
+  transcripts(on)('ag1', 'Reply ok')
   await start($)
   await $.agent.spawn(spawnInput(1, 'T2 build'))
   const shown = await band($)

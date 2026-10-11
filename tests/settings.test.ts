@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PLAN, start, world, userCommand } from './world.ts'
+import { PLAN, start, transcripts, userCommand, world } from './world.ts'
 import type { World } from './world.ts'
 
 // P5: the settings (SPEC 13), skins optional (SPEC 11), the role file (SPEC 7), bandDefault (SPEC 10.1).
@@ -141,8 +141,13 @@ const ROLES = JSON.stringify({ roles: { scout: { models: ['sonnet'], efforts: ['
 
 function beneathAgents(on, ids: string[]) {
   let n = 0
+  const spawned = transcripts(on)
   on('tool.call', async () => ({ result: 'ok' }))
-  on('agent.spawn', async () => ({ model: 'claude-haiku-5-5', agentId: ids[n++] }))
+  on('agent.spawn', async (_$, e) => {
+    const agentId = ids[n++]
+    spawned(agentId, e.prompt)
+    return { model: 'claude-haiku-5-5', agentId }
+  })
   on('turn.step', async function* (_$, e) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-haiku-5-5' } }
   })

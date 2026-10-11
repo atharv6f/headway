@@ -406,7 +406,8 @@ What headway does with your machine, in full:
   is refused with `file too large`; any other larger file is skipped, with one line in the debug log.
   An inline Workflow script over 256 Ki characters is not parsed. Each parser runs in time linear in
   its input: a plan line is read to its first 8 KiB, an agent's answer to its first 4 KiB when looking
-  for a BLOCKED line.
+  for a BLOCKED line, an agent's transcript opening to its first 64 KiB when looking for the prompt it
+  was spawned with.
 - **What remains:** between resolving a path and reading it, a directory on the resolved path could
   still be swapped for a link; that takes write access to a directory inside the project or the config
   directory.
@@ -490,9 +491,9 @@ returned, so the event goes ahead exactly as it would without headway.
 | `ui.render` on `ToolUse` and `ToolResult` of `mcp__headway__headway` only | the call's input and reply | draws headway's own tool call as one dim line and its result row as nothing (`quietToolRows`; with it off, the stock rows are passed on unchanged). Display only: Claude reads the same result | the stock rows show raw JSON for every step update |
 | `ui.close` | which pane closed | stops headway's redraw timer when its pane closes. Passes the close on unchanged | no timer outlives the pane |
 | `agent.spawn` | the spawn's description, type, prompt, name, model and workflow fields | records the agent under the step its text names, then `return next(e)`: the spawn is passed on unchanged and what the engine answers is not read | to show every subagent under its step |
-| `turn.step` | the step's model, effort and token usage; for an agent it has not seen step before, the first message of that agent's transcript and its `$.agent.list()` row, to tell which recorded spawn it is | the agent's status, model, tokens and estimated cost in headway's state. The request and its response stream are passed on unchanged | running, stalled and cost per agent |
+| `turn.step` | the step's model, effort and token usage; for an agent it has not seen step before, the first message of that agent's transcript (read once per agent) and its `$.agent.list()` row, to tell which recorded spawn it is | the agent's status, model, tokens and estimated cost in headway's state. The request and its response stream are passed on unchanged | running, stalled and cost per agent |
 | `turn.complete` | the turn's answer (the first 4 KiB, for a `BLOCKED` line), reason, duration and usage | the agent's final status in headway's state; a main-loop turn re-reads the pinned plan and the usage figures. Passes the result on unchanged | done, failed and blocked agents; the compact hint |
-| `tool.call` on `Agent` | the call's description, type and model; the agent type's definition file, for its `model:` line (see [Router warnings](#router-warnings)) | the call goes ahead with its input unchanged. After it has run: when a router rule fired and the call was not denied, one line is added to the result's `context` (see [Text headway adds to tool results](#text-headway-adds-to-tool-results)); the agentId the result names is joined to the spawn's record, and a spawn the engine refused is dropped from headway's state | model routing warnings; tracking the agent |
+| `tool.call` on `Agent` | the call's description, type and model; the agent type's definition file, for its `model:` line (see [Router warnings](#router-warnings)) | the call goes ahead with its input unchanged. After it has run: when a router rule fired and the call was not denied, one line is added to the result's `context` (see [Text headway adds to tool results](#text-headway-adds-to-tool-results)); the agentId the result names is joined to the spawn's record, correcting an earlier join made from the transcript or the list row, and a spawn the engine refused is dropped from headway's state | model routing warnings; tracking the agent |
 | `tool.call` on `Workflow` | the Workflow script (the `scriptPath` file when it lies inside the project or the Claude Code config directory, else the inline script) | the call goes ahead with its input unchanged. Its `agent()` calls are recorded as planned agents; after it has run, when rule R2 fired and the call was not denied, one line is added to the result's `context` | Workflow phases as the plan; R2 |
 | `tool.call` on `mcp__headway__headway` | the call's input | answers headway's own tool, which only headway implements (`track`, `state`, `report`, `focus`, `untrack`) | how Claude reports steps |
 | `command.run` on `headway` | the arguments, and whether you typed the command at the prompt | answers headway's own `/headway` command; `track`, `untrack` and `band on`/`off` run only when you typed them | the pane and the pin |
@@ -563,10 +564,13 @@ A denied or refused call gets nothing added.
   `tasks` tag.
 - **Which agent is which.** headway passes every spawn on unchanged and does not read what Claude
   Code answers, so it learns an agent's id at the agent's first step: an Agent-tool agent by the
-  opening of its prompt (or its agent-list row), confirmed by the Agent call's result. A Workflow
-  agent's transcript cannot be read at that point, so parallel `agent()` calls that ask for the
-  same model and effort are told apart by the order they started in. A Workflow agent that Claude
-  Code refuses to start stays queued and is marked stalled after `startMinutes`.
+  opening of its prompt (or its agent-list row). The Agent call's result names the id and settles
+  it, putting right a wrong guess. When neither the opening nor the row can be read, the agent's
+  steps wait aside until that result, and its row reads queued meanwhile. A Workflow agent's
+  transcript cannot be read at its first step and its call has no such result, so parallel
+  `agent()` calls of one run that ask for the same model family are told apart by their order in
+  the script, and a mix-up between them stays. A Workflow agent that Claude Code refuses to start
+  stays queued and is marked stalled after `startMinutes`.
 - **Workflow agents without a static label** (`agent()` with no `label`, or a call inside
   `parallel`/`pipeline` with a dynamic one) are not joined to their planned call: they sit under the
   run's group with no phase, model or effort from the script.

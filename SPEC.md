@@ -486,7 +486,7 @@ label and the newest prompt are kept in the session record.
 | `tool.call` `{ tool: 'Agent' }` | router rules at dispatch; the ID search text; after `next(e)`, the spawn's agentId or its refusal (below) | `e.description`, `e.prompt`, `e.subagent_type`, `e.model`, `e.name`, `e.tool_use_id`; after `next(e)`: `result.result.agentId`, `deny`, `isError` |
 | `agent.spawn` (observed: the hook records, then `return next(e)`, and never reads what `next` answers) | create the record; for a Workflow agent, the join (5.2) | `e.tool_use_id`, `e.description`, `e.subagentType`, `e.prompt`, `e.name`, `e.parentAgentId`, `e.workflow?.{runId, agentIndex}` |
 | `tool.call` `{ tool: 'Workflow' }` | parse the script; rule R2, logged, toasted and noted only after `next(e)` and only when the call was not denied; after `next(e)`: `result.result.runId` | `$.fs.read` of where `e.scriptPath` lands when it lands inside the project or the Claude Code config directory and is a regular file of at most 256 KiB (the tool prefers it to `script`, so headway reads the same text; section 14), else `e.script` when it is at most 262,144 characters (256 Ki); a longer inline script is not parsed |
-| `turn.step` (async generator, `yield* next(e)`) | running status, last activity, model, effort, tokens; the spawn join (below) | `e.agentId`, `e.model`, `e.effort`, `result.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, model}`; for an `agentId` no record has: `$.session.messages({ agentId })` (its first user message) and its `$.agent.list()` row |
+| `turn.step` (async generator, `yield* next(e)`) | running status, last activity, model, effort, tokens; the spawn join (below) | `e.agentId`, `e.model`, `e.effort`, `result.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, model}`; for an `agentId` no record has: `$.session.messages({ agentId })` (its first user message, read once per agent) and its `$.agent.list()` row |
 | `turn.complete` | final status, answer, duration; the spawn join, as at a step | `e.agentId`, `e.reason`, `e.answer`, `e.durationMs`, `e.usage` |
 | `$.agent.list()` on the 15 s timer | `failed`/`killed` the events missed; `name` | `id`, `status`, `name`, `description` |
 
@@ -501,21 +501,40 @@ event on unchanged with `return next(e)`, so the spawn hook records from the eve
 the engine starts the agent, and the record has no `agentId` (its `id` is the `tool_use_id`, or
 `wf:<runId>:<agentIndex>`; its model is the alias asked for until the first step resolves it). A
 step or completion whose `agentId` no record has joins a waiting spawn (one with no `agentId`, no
-step, queued or stalled, not a planned call), in this order: when some waiting spawn has a prompt
-head (the first 160 characters of its prompt, white space folded, kept in memory), the earliest
-whose head the agent's first user message holds, ties told apart by the list row, and none when no
-head matches (an engine fork, which no spawn announced, is not taken for one); else, with a
-`$.agent.list()` row, the earliest with the row's `description` and `type`. A workflow agent has
-neither (*verified* 2.1.296: `$.session.messages({ agentId })` refuses it at its first step and the
-list does not name it), so with neither the agent joins the earliest waiting workflow spawn whose
-asked-for model family and effort fit the step's (`agentIndex` breaks a tie), and none when no
-workflow spawn fits; when no workflow spawn waits, only a spawn waiting alone joins. Parallel
-workflow agents with the same model and effort are therefore joined in spawn order, which is the
-order of their first steps as far as observed. The Agent call's result carries the `agentId`: a spawn of
-that `tool_use_id` still waiting takes it, folding in the provisional record its steps made. An
-Agent call that comes back denied or as an error with no `agentId` means the engine refused the
-spawn: a waiting record of that `tool_use_id` is dropped. A Workflow agent the engine refused has
-no such result; its record waits and is marked stalled after `startMinutes`.
+step, queued or stalled, not a planned call), in this order. When some waiting spawn has a prompt
+head (the first 160 characters of its prompt, white space folded, kept in memory), the agent's first
+user message is searched for the heads in its first 64 KiB (64 Ki characters, white space folded;
+one bounded pass per head): the earliest spawn whose head it holds joins, ties told apart by the
+list row; when it holds no head, only a `$.agent.list()` row can join it (the earliest spawn with
+the row's `description` and `type`), and with no row nothing joins (an engine fork, which no spawn
+announced, is not taken for one). Else, with a row, the earliest spawn with the row's `description`
+and `type`. A workflow agent has neither (*verified* 2.1.296: `$.session.messages({ agentId })`
+refuses it at its first step and the list does not name it), so with neither the agent joins a
+waiting workflow spawn: one that is queued (a stalled spawn, which never started, is never a
+candidate) of a run not over by the run-end rule (5.2), whose asked-for model family matches the
+step's when both are known. The most recently started run is tried first (a run starts at the
+earliest record it has); only when none of its spawns fits does the next most recent get a turn.
+Within a run a spawn whose script effort equals the step's goes before one whose does not (the
+engine may run a call at another effort than the script set, so effort never rules a spawn out),
+then the lowest `agentIndex`. Parallel workflow agents of one run with the same model family are
+therefore joined in `agentIndex` order. An Agent-tool spawn is never joined without a hint, however
+alone it waits: the agent's steps sit on a provisional record until a hint or the Agent call's
+result joins them. Each agent's transcript is read at most once for this (its opening is kept, for
+at most 32 agents, in memory), so a later step or the completion of an agent that joined nothing
+does not read it again.
+
+The Agent call's result carries the `agentId` and is authoritative: it outranks a join made from
+the transcript, the row or the run. The record of that `tool_use_id` takes the agent's step data
+(steps, tokens, cost, status and its reason or question, model, effort, step and end times) from
+wherever a join put them, a provisional record or another spawn's record. Step data it held of
+another agent go back: to the record that agent's data came from when two joins crossed (a swap),
+else to a provisional record of that agent, which the provisional rules below then keep, surface or
+drop; a record that gives up its data and gets none back waits again under its spawn id. Nothing is
+counted twice. Log entries already written stay; those of either agent take the ref and role of
+the record that now holds it. An Agent call that comes back denied or as an error with no
+`agentId` means the engine refused the spawn: a waiting record of that `tool_use_id` is dropped. A
+Workflow agent has no such result, so a mix-up between workflow spawns stays, and a Workflow agent
+the engine refused waits and is marked stalled after `startMinutes`.
 
 A step or completion that joins no spawn is a provisional record. One that only steps and is
 quiet for 2 minutes is dropped. One that finishes and that no spawn claims within 15 s is an

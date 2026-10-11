@@ -6,9 +6,9 @@ import { PLAN, start, TOOL, world } from './world.ts'
 // agent.spawn is observed, never answered: the hook records the spawn from the event and returns
 // next(e) as it came, so the agent's id is not known when the record is written. It is joined at the
 // agent's first step (or its completion): by the head of its prompt, which the agent's own transcript
-// opens with; else by the `$.agent.list()` row's description and type; else when one spawn alone
-// waits. The Agent tool's result, which carries the agentId, confirms the join, and a spawn the
-// engine refused (the Agent call came back denied or as an error) is dropped.
+// opens with; else by the `$.agent.list()` row's description and type; a workflow agent by its run,
+// model and order. The Agent tool's result, which carries the agentId, settles the join (rejoin.test.ts),
+// and a spawn the engine refused (the Agent call came back denied or as an error) is dropped.
 
 type A = { id: string; agentId?: string; status: string; description: string; taskIds: string[]; phase?: string; steps: number; model?: string }
 
@@ -199,9 +199,9 @@ test('joinSpawn: a transcript that matches no waiting prompt joins nothing, so a
   expect(joinSpawn(agents, { text: 'step 1: read the parser', prompts: { toolu_1: 'step 1: read the parser' } })).toBe(0)
 })
 
-test('joinSpawn: with no hint, one waiting spawn joins and two do not', () => {
+test('joinSpawn: with no hint, no Agent-tool spawn joins, however alone it waits', () => {
   const one = spawned({})
-  expect(joinSpawn(one, { prompts: {} })).toBe(0)
+  expect(joinSpawn(one, { prompts: {} })).toBe(-1)
   const two = [...one, ...spawned({ toolUseId: 'toolu_2' })]
   expect(joinSpawn(two, { prompts: {} })).toBe(-1)
 })
@@ -209,7 +209,8 @@ test('joinSpawn: with no hint, one waiting spawn joins and two do not', () => {
 test('bindAgent: a provisional record of the same agent folds into the spawn it belongs to', () => {
   let agents = spawned({ description: 'step 1: read' })
   agents = stepStart(agents, { at: NOW + 5, agentId: 'z1', model: 'claude-haiku-5-5' }).agents
-  expect(agents.map((a) => a.id)).toEqual(['z1']) // one waiting spawn and no hint: joined at once
+  expect(agents.map((a) => a.id)).toEqual(['toolu_1', 'z1']) // no hint: it waits for the Agent result
+  expect(bindAgent(agents, 'toolu_1', 'z1', NOW + 6).agents.map((a) => a.id + ':' + a.description + ':' + a.steps)).toEqual(['z1:step 1: read:1'])
   const two = [...spawned({ toolUseId: 'toolu_a', description: 'a' }), ...spawned({ toolUseId: 'toolu_b', description: 'b' })]
   const stepped = stepStart(two, { at: NOW + 5, agentId: 'z2', model: 'claude-haiku-5-5' }).agents
   expect(stepped.length).toBe(3)

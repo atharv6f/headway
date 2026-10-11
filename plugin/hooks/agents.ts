@@ -81,6 +81,7 @@ export interface Outcome {
   agents: AgentRecord[]
   log: LogEntry[]
   changed: boolean
+  repoint?: string[] // record ids whose step data moved: their log entries take the record's ref and role (repointLog)
 }
 
 export interface Usage {
@@ -527,7 +528,7 @@ export function spawnAgent(agents: AgentRecord[], ev: SpawnEvent, ctx: MatchCont
 // The agent.spawn hook observes and passes the spawn on as it came (register.tsx), so its record is
 // written from the event, before the engine starts the agent, and has no agentId. The agent's first
 // step or its completion joins the agentId to it (joinSpawn); the Agent tool's result, which carries
-// the agentId, confirms it (bindAgent); a spawn the engine refused is dropped (dropUnjoined).
+// the agentId, settles it, correcting a wrong join (bindAgent); a spawn the engine refused is dropped (dropUnjoined).
 
 // What tells a new agentId's spawn: the agent's transcript, which opens with the prompt it was
 // spawned with; its `$.agent.list()` row; the head of each waiting spawn's prompt, by record id,
@@ -542,7 +543,8 @@ export interface JoinHints {
 }
 
 const JOIN_HEAD = 160
-const JOIN_TEXT = 8192
+// How much of a transcript's opening is searched for a head: the prompt may follow a preamble.
+export const JOIN_TEXT = 65536
 
 function squash(s: string): string {
   return s.replace(/\s+/g, ' ').trim()
@@ -562,22 +564,44 @@ function waitingSpawn(a: AgentRecord): boolean {
   return a.agentId === undefined && !a.planned && !a.provisional && !a.skipped && a.steps === 0 && (a.status === 'queued' || a.status === 'stalled')
 }
 
-// Whether a waiting workflow spawn could be the agent of a step on `model` at `effort`: the family
-// the call asked for and the effort it set, where both sides name one.
-function fitsStep(a: AgentRecord, hints: JoinHints): boolean {
+// Whether a waiting workflow spawn could be the agent of a step on `model`: the family the call
+// asked for, where both sides name one. Effort does not rule a spawn out (the engine may run a call
+// at another effort than the script set); it only breaks a tie (workflowSpawn).
+function fitsModel(a: AgentRecord, hints: JoinHints): boolean {
   const asked = familyOf(a.requestedModel)
   const ran = familyOf(hints.model)
-  if (asked !== 'unknown' && ran !== 'unknown' && asked !== ran) return false
-  return a.effort === undefined || hints.effort === undefined || a.effort === hints.effort
+  return asked === 'unknown' || ran === 'unknown' || asked === ran
+}
+
+// The workflow spawn a step with no transcript and no row joins, or -1. Candidates: queued (never a
+// stalled one), of a run not over (endedRuns, when `at` is given). The most recently started run
+// goes first (a run starts at the earliest record it has); only when none of its spawns fits the
+// step's model does the next run get a turn. Within a run, a spawn that set the step's effort
+// before one that did not, then the lowest agentIndex.
+function workflowSpawn(agents: AgentRecord[], waiting: Array<[AgentRecord, number]>, hints: JoinHints, at: number | undefined): number {
+  const over = at === undefined ? new Set<string>() : endedRuns(agents, at)
+  const flows = waiting.filter(([a]) => a.runId !== undefined && a.status === 'queued' && !over.has(a.runId))
+  if (flows.length === 0) return -1
+  const starts = new Map<string, number>()
+  for (const a of agents) if (a.runId !== undefined) starts.set(a.runId, Math.min(starts.get(a.runId) ?? a.spawnedAt, a.spawnedAt))
+  const runs = [...new Set(flows.map(([a]) => a.runId as string))].sort((x, y) => (starts.get(y) ?? 0) - (starts.get(x) ?? 0))
+  for (const run of runs) {
+    const fit = flows.filter(([a]) => a.runId === run && fitsModel(a, hints))
+    if (fit.length === 0) continue
+    const same = fit.filter(([a]) => a.effort !== undefined && a.effort === hints.effort)
+    const pool = same.length > 0 ? same : fit
+    return pool.reduce((b, x) => ((x[0].agentIndex ?? 0) < (b[0].agentIndex ?? 0) ? x : b))[1]
+  }
+  return -1
 }
 
 // The waiting spawn a new agentId belongs to, or -1. A transcript decides when some waiting spawn has
-// a prompt head: the earliest whose head the transcript holds, else none (an engine fork, which no
-// spawn announced, joins nothing). Else a list row decides: the earliest with its description and
-// type. With neither, the agent is a workflow agent (or an engine fork): it joins the earliest
-// waiting workflow spawn that fits its step's model and effort, agentIndex breaking a tie; when no
-// workflow spawn waits, only a spawn waiting alone joins.
-export function joinSpawn(agents: AgentRecord[], hints: JoinHints): number {
+// a prompt head: the earliest whose head the transcript's first JOIN_TEXT characters hold. When it
+// holds none, only a list row decides (an engine fork, which no spawn announced, joins nothing).
+// Else a list row decides: the earliest with its description and type. With neither, the agent is a
+// workflow agent (or an engine fork): it joins a waiting workflow spawn (workflowSpawn), and never an
+// Agent-tool spawn, however alone it waits: that one waits for a hint or its Agent call's result.
+export function joinSpawn(agents: AgentRecord[], hints: JoinHints, at?: number): number {
   const waiting: Array<[AgentRecord, number]> = []
   agents.forEach((a, i) => {
     if (waitingSpawn(a)) waiting.push([a, i])
@@ -591,64 +615,113 @@ export function joinSpawn(agents: AgentRecord[], hints: JoinHints): number {
     if (headed.length > 0) {
       const text = squash(hints.text.slice(0, JOIN_TEXT))
       const found = headed.filter(([a]) => text.includes(hints.prompts[a.id]))
-      // spawns with the same prompt are told apart by the row, where there is one
-      const told = found.length > 1 ? byRow(found) : []
-      return earliest(told.length > 0 ? told : found)
+      if (found.length > 0) {
+        // spawns with the same prompt are told apart by the row, where there is one
+        const told = found.length > 1 ? byRow(found) : []
+        return earliest(told.length > 0 ? told : found)
+      }
+      return row ? earliest(byRow(waiting)) : -1
     }
   }
   if (row) return earliest(byRow(waiting))
-  const flows = waiting.filter(([a]) => a.runId !== undefined)
-  if (flows.length > 0) {
-    const fit = flows.filter(([a]) => fitsStep(a, hints))
-    if (fit.length === 0) return -1
-    return fit.reduce((b, x) => (x[0].spawnedAt < b[0].spawnedAt || (x[0].spawnedAt === b[0].spawnedAt && (x[0].agentIndex ?? 0) < (b[0].agentIndex ?? 0)) ? x : b))[1]
-  }
-  return waiting.length === 1 ? waiting[0][1] : -1
+  return workflowSpawn(agents, waiting, hints, at)
 }
 
-// Gives record `i` the agentId, folding in a provisional record of the same agent (its steps came
-// before the join). Undefined when the agentId already belongs to another real record.
-function attach(list: AgentRecord[], i: number, agentId: string, at: number, roles?: Roles): Outcome | undefined {
-  const r = list[i]
-  const pi = indexOfAgent(list, agentId)
-  const early = pi >= 0 && pi !== i ? list[pi] : undefined
-  if (early && !early.provisional) return undefined
-  const joined: AgentRecord = clean({
-    ...r,
-    id: agentId,
-    agentId,
-    ...(early
-      ? {
-          model: early.model ?? r.model,
-          effort: early.effort ?? r.effort,
-          status: early.status,
-          reason: early.reason,
-          question: early.question,
-          spawnedAt: Math.min(r.spawnedAt, early.spawnedAt),
-          firstStepAt: early.firstStepAt,
-          lastStepAt: early.lastStepAt,
-          endedAt: early.endedAt,
-          durationMs: early.durationMs,
-          steps: early.steps,
-          tokens: early.tokens,
-          estUsd: r.estUsd + early.estUsd,
-        }
-      : {}),
-  })
-  // steps that came before the join could not be routed (the early record had no role): do it now
-  const late = early && early.firstStepAt !== undefined ? firstStepWarnings(joined, joined.model, joined.effort, roles) : []
-  const routed = late.length > 0 ? { ...joined, warnings: [...joined.warnings, ...late.map(warningString)] } : joined
-  let out = replaceAt(list, i, routed)
-  if (early) out = out.filter((_, k) => k !== pi)
-  const log = [...(early && isFinished(early.status) ? [finishEntry(routed, early.endedAt ?? at)] : []), ...late.map((w) => warnEntry(w, routed, early?.firstStepAt ?? at))]
-  return { agents: out, log, changed: true }
+// What an agent's own events wrote on a record: they belong to its agentId, not to the spawn, and
+// move with it when a join is corrected (bindAgent).
+const STEP_FIELDS = ['agentId', 'model', 'effort', 'status', 'reason', 'question', 'firstStepAt', 'lastStepAt', 'stalledAt', 'endedAt', 'durationMs', 'steps', 'tokens', 'estUsd'] as const
+type StepData = Pick<AgentRecord, (typeof STEP_FIELDS)[number]>
+
+function stepData(r: AgentRecord): StepData {
+  const out: Record<string, unknown> = {}
+  for (const k of STEP_FIELDS) out[k] = r[k]
+  return out as unknown as StepData
 }
 
-// The Agent tool's result names the agentId of the call's spawn: a spawn still waiting takes it.
+const NO_STEPS = { status: 'queued' as const, steps: 0, tokens: { ...ZERO }, estUsd: 0 }
+
+// R3 and R4 for step data a record took from elsewhere: those steps were routed on another record,
+// or on none (a provisional record has no role).
+function routeTaken(r: AgentRecord, roles: Roles | undefined): { record: AgentRecord; warnings: Warning[] } {
+  if (r.firstStepAt === undefined) return { record: r, warnings: [] }
+  const found = firstStepWarnings(r, r.model, r.effort, roles)
+  return { record: found.length > 0 ? { ...r, warnings: [...r.warnings, ...found.map(warningString)] } : r, warnings: found }
+}
+
+// The record for step data `held` of another agent: on `base`'s spawn fields, under its agentId.
+function holding(base: AgentRecord, held: StepData): AgentRecord {
+  return clean({ ...without(base, ...STEP_FIELDS), ...held, id: held.agentId as string })
+}
+
+// The Agent tool's result names the agentId of the call's spawn, and it outranks any join made from
+// hints. The call's record takes that agent's step data, from a provisional record or from another
+// record a join gave it to. Step data the call's record held of another agent go back: to the record
+// that agent's data came from when two joins crossed (a swap), else to a provisional record of that
+// agent, which the provisional rules then keep, surface or drop. A record that gives up its data and
+// gets none back waits again under its spawn id. Log entries of both agents are re-pointed.
 export function bindAgent(agents: AgentRecord[], toolUseId: string, agentId: string, at: number, roles?: Roles): Outcome {
   const i = agents.findIndex((a) => a.toolUseId === toolUseId && a.runId === undefined && !a.planned && !a.provisional)
-  if (i < 0 || agents[i].agentId !== undefined) return SAME(agents)
-  return attach(agents, i, agentId, at, roles) ?? SAME(agents)
+  if (i < 0 || agents[i].agentId === agentId) return SAME(agents)
+  const r = agents[i]
+  const k = agents.findIndex((a, n) => n !== i && a.agentId === agentId)
+  const other = k >= 0 ? agents[k] : undefined
+  const held = r.agentId !== undefined ? stepData(r) : undefined
+  const log: LogEntry[] = []
+  let mine: AgentRecord
+  if (other) {
+    const taken = stepData(other)
+    const routed = routeTaken(
+      clean({
+        ...without(r, ...STEP_FIELDS),
+        ...taken,
+        id: agentId,
+        spawnedAt: other.provisional ? Math.min(r.spawnedAt, other.spawnedAt) : r.spawnedAt,
+        // a spawn that held nothing has only its planned cost, which a step never adds to
+        estUsd: (held ? 0 : r.estUsd) + taken.estUsd,
+      }),
+      roles,
+    )
+    mine = routed.record
+    // a provisional record logs no finish: the record that takes its data does
+    if (other.provisional && isFinished(mine.status)) log.push(finishEntry(mine, mine.endedAt ?? at))
+    log.push(...routed.warnings.map((w) => warnEntry(w, mine, mine.firstStepAt ?? at)))
+  } else if (held) mine = clean({ ...without(r, ...STEP_FIELDS), ...NO_STEPS, id: agentId, agentId })
+  else mine = clean({ ...r, id: agentId, agentId })
+  let out = replaceAt(agents, i, mine)
+  if (other && !other.provisional) {
+    let theirs: AgentRecord
+    if (held) {
+      const swapped = routeTaken(holding(other, held), roles)
+      theirs = swapped.record
+      log.push(...swapped.warnings.map((w) => warnEntry(w, theirs, theirs.firstStepAt ?? at)))
+    } else {
+      const wf = other.runId !== undefined && other.agentIndex !== undefined ? { runId: other.runId, agentIndex: other.agentIndex } : undefined
+      theirs = clean({ ...without(other, ...STEP_FIELDS), ...NO_STEPS, id: spawnRecordId({ toolUseId: other.toolUseId ?? other.id, workflow: wf }) })
+    }
+    out = replaceAt(out, k, theirs)
+  } else {
+    const loose = held ? holding(provisional(held.agentId as string, held.firstStepAt ?? at), held) : undefined
+    if (other) out = loose ? replaceAt(out, k, loose) : out.filter((_, n) => n !== k)
+    else if (loose) out = [...out, loose]
+  }
+  if (!other && !held) return { agents: out, log, changed: true }
+  return { agents: out, log, changed: true, repoint: held ? [agentId, held.agentId as string] : [agentId] }
+}
+
+// Log entries of the given record ids take the ref and role of the record that now holds the id
+// (its step data moved, bindAgent). A warning's ref is its rule, so only its role is taken.
+export function repointLog(log: LogEntry[], agents: AgentRecord[], ids: string[]): LogEntry[] {
+  let changed = false
+  const out = log.map((l) => {
+    if (l.agentId === undefined || ids.indexOf(l.agentId) < 0) return l
+    const r = agents.find((a) => a.id === l.agentId)
+    if (!r) return l
+    const next = clean({ ...without(l, 'role', 'label'), ...(l.kind === 'warn' ? {} : { ref: refOf(r) }), ...roleFields(r) })
+    if (JSON.stringify(next) === JSON.stringify(l)) return l
+    changed = true
+    return next
+  })
+  return changed ? out : log
 }
 
 // An Agent call that came back denied or as an error before its agent ever stepped: the engine
@@ -661,7 +734,7 @@ export function dropUnjoined(agents: AgentRecord[], toolUseId: string): Outcome 
 // The record a first step or a completion of an unknown agentId lands on: the waiting spawn it joins
 // (given the agentId), else a new provisional record.
 function landing(list: AgentRecord[], agentId: string, at: number, join: JoinHints | undefined): { list: AgentRecord[]; i: number } {
-  const j = joinSpawn(list, join ?? { prompts: {} })
+  const j = joinSpawn(list, join ?? { prompts: {} }, at)
   if (j >= 0) return { list: replaceAt(list, j, { ...list[j], id: agentId, agentId }), i: j }
   return { list: [...list, provisional(agentId, at)], i: list.length }
 }

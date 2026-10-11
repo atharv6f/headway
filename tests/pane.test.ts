@@ -11,7 +11,7 @@ import { parseGroupMap, parsePlan } from '../plugin/hooks/plan.ts'
 import type { Plan } from '../plugin/hooks/plan.ts'
 import { text as tasksText } from './fixtures/release-table.ts'
 import { text as boardText } from './fixtures/release-groups.ts'
-import { userCommand } from './world.ts'
+import { transcripts, userCommand } from './world.ts'
 
 const NOW = 1_000_000_000
 const MIN = 60_000
@@ -543,6 +543,7 @@ test('hooks: the pane draws the tab row and the plan tab; a tab button switches 
   mock.clock(on, { now: 5000 })
   mock.env(on, {})
   on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ab12cd34' }))
+  transcripts(on)('ab12cd34', 'Reply ok')
   stepBeneath(on)
   await $.agent.spawn(spawnInput({ description: 'census of the seams' }))
   await firstStep($)
@@ -567,6 +568,7 @@ test('hooks: a group row is a Button that toggles; e expands all; h hides done',
   mock.clock(on, { now: 5000 })
   mock.env(on, {})
   on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ab12cd34' }))
+  transcripts(on)('ab12cd34', 'Reply ok')
   stepBeneath(on)
   await $.agent.spawn(spawnInput({ description: 'census of the seams' }))
   await firstStep($)

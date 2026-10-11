@@ -1,7 +1,7 @@
 // Every on(...) and every $.* call. The pure modules (plan.ts, format.ts, agents.ts, theme.ts,
 // band.tsx, pane.tsx, pin.ts, tool.ts, persist.ts) carry the work.
 import { atom, read, update } from 'claude-code'
-import { RUN_TITLE_MAX, addPlanned, appendLog, bandCurrent, bindAgent, bindRun, buildTree, completeAgent, dropPlanned, dropUnjoined, isFinished, isShown, pinEntry, planFlips, promptHead, reconcileList, repinAgents, rereadEntry, settleRestored, spawnAgent, spawnRecordId, stepEnd, stepStart, tick, unpinEntry } from './agents.ts'
+import { JOIN_TEXT, RUN_TITLE_MAX, addPlanned, appendLog, bandCurrent, bindAgent, bindRun, buildTree, completeAgent, dropPlanned, dropUnjoined, isFinished, isShown, pinEntry, planFlips, promptHead, reconcileList, repinAgents, repointLog, rereadEntry, settleRestored, spawnAgent, spawnRecordId, stepEnd, stepStart, tick, unpinEntry } from './agents.ts'
 import type { AgentRecord, JoinHints, LogEntry, Outcome, PlannedInput } from './agents.ts'
 import { bandLines, bandTree, bandVisible } from './band.tsx'
 import { clean, plainName } from './format.ts'
@@ -372,7 +372,10 @@ async function applyAgents($, fn: (agents: AgentRecord[]) => Outcome): Promise<A
   if (!out.changed) return written
   remember({ agents: written })
   prunePrompts(written)
-  if (out.log.length > 0) remember({ log: await update($, logAtom, (log) => appendLog(log, out.log)) })
+  // a corrected join moved step data between records: the entries they wrote follow (bindAgent)
+  const moved = out.repoint
+  if (moved !== undefined && moved.length > 0) remember({ log: await update($, logAtom, (log) => appendLog(repointLog(log, written, moved), out.log)) })
+  else if (out.log.length > 0) remember({ log: await update($, logAtom, (log) => appendLog(log, out.log)) })
   // The phases source is derived from the agents: a write that moved a phase is its flip.
   if (written.some((a) => a.runPhases !== undefined)) {
     await guarded($, 'phase flips', async () => {
@@ -1223,8 +1226,29 @@ function registerPaneClose(on) {
 }
 
 // The head of each waiting spawn's prompt, by record id, until its agent is joined (agents.ts
-// joinSpawn). Memory only: after a restart a waiting spawn joins by its list row or alone.
+// joinSpawn). Memory only: after a restart a waiting spawn joins by its list row or its Agent result.
 const spawnPrompts = new Map<string, string>()
+
+// The opening of each agentId's transcript as read for a join (its first JOIN_TEXT characters, or
+// undefined when it was not readable): read once per agent, though the agent may ask again (its
+// provisional record expired, or its completion comes before any spawn claimed it). Memory only,
+// the oldest dropped past OPENINGS_MAX.
+const openings = new Map<string, string | undefined>()
+const OPENINGS_MAX = 32
+
+async function openingOf($, agentId: string): Promise<string | undefined> {
+  if (openings.has(agentId)) return openings.get(agentId)
+  let text: string | undefined
+  try {
+    const messages = await $.session.messages({ agentId })
+    if (Array.isArray(messages)) text = messages.find((m) => m.role === 'user' && typeof m.text === 'string')?.text
+  } catch {
+    // not readable: the list row, or the step's model and effort, decides
+  }
+  if (openings.size >= OPENINGS_MAX) openings.delete(openings.keys().next().value as string)
+  openings.set(agentId, text?.slice(0, JOIN_TEXT))
+  return text?.slice(0, JOIN_TEXT)
+}
 
 function prunePrompts(agents: AgentRecord[]): void {
   for (const id of spawnPrompts.keys()) {
@@ -1275,13 +1299,7 @@ async function recordSpawn($, e): Promise<void> {
 async function joinHints($, agentId: string, step: { model?: string; effort?: string | number } = {}): Promise<JoinHints | undefined> {
   const known = 'agents' in written ? written.agents ?? [] : await read($, agentsAtom)
   if (known.some((a) => a.agentId === agentId)) return undefined
-  let text: string | undefined
-  try {
-    const messages = await $.session.messages({ agentId })
-    if (Array.isArray(messages)) text = messages.find((m) => m.role === 'user' && typeof m.text === 'string')?.text
-  } catch {
-    // not readable: the list row, or the step's model and effort, decides
-  }
+  const text = await openingOf($, agentId)
   let row: { description: string; type: string } | undefined
   try {
     const found = (await $.agent.list()).find((x) => x.id === agentId)
@@ -1304,7 +1322,9 @@ function registerTracking(on) {
   on('agent.spawn', async ($, e, next) => {
     await guarded($, 'agent.spawn', () => recordSpawn($, e))
     return next(e)
-  }).catch(async ($, e, next) => next(e)) // tracking never gates a spawn: fail open
+  }).catch(async ($, e, next) => {
+    return next(e)
+  }) // tracking never gates a spawn: fail open
 
   // Main loop vs subagent: a subagent's step carries `agentId`, the main loop's does not.
   // The step-start bookkeeping runs beside the model call, not before it; it is settled before the

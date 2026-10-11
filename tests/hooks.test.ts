@@ -597,10 +597,15 @@ test('containment: an agent.spawn without a prompt still records the agent', asy
   mock.clock(on, { now: 1000 })
   const st = watchState(on)
   beneath(on, ['np1'])
+  toolBeneath(on, () => ({ result: { status: 'completed', agentId: 'np1', content: [] } }))
   await $.agent.spawn(spawnInput({ prompt: undefined }))
   expect(st.agents().map((a) => a.id)).toEqual(['toolu_1'])
-  await step($, 'np1') // alone, it joins without a prompt to compare
-  expect(st.agents().map((a) => a.id)).toEqual(['np1'])
+  // with no prompt to compare and no list row, its step waits on a provisional record, even alone
+  await step($, 'np1')
+  expect(st.agents().map((a) => a.id + ':' + (a.provisional === true))).toEqual(['toolu_1:false', 'np1:true'])
+  // the Agent call's result names the agentId: the spawn takes it
+  await $.tool.call({ tool: 'Agent', description: 'a task', subagent_type: 'general-purpose', model: 'haiku', prompt: 'p', tool_use_id: 'toolu_1' })
+  expect(st.agents().map((a) => a.id + ':' + a.steps)).toEqual(['np1:1'])
 })
 
 test('containment: a Workflow script with an invalid code point does not fail the call and marks the call dynamic', async ($, on) => {

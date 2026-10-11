@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PLAN, start, TOOL, world } from './world.ts'
+import { PLAN, start, TOOL, transcripts, world } from './world.ts'
 import { TASKS_MAX, TITLE_MAX } from '../plugin/hooks/format.ts'
 import { capSession, MAX_RECORD_BYTES, recordText } from '../plugin/hooks/persist.ts'
 
@@ -44,7 +44,12 @@ test('save: a pin is written under session:<id> a second later', async ($, on) =
 test('save: a burst of changes writes at most once a second, and the last write holds the last change', async ($, on) => {
   const w = world(on, { files: FILES, sessionId: 's-b' })
   let n = 0
-  on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ag' + n++ }))
+  const spawned = transcripts(on)
+  on('agent.spawn', async (_$, e) => {
+    const agentId = 'ag' + n++
+    spawned(agentId, e.prompt)
+    return { model: 'claude-sonnet-5-5', agentId }
+  })
   await start($)
   await $.tool.call({ tool: TOOL, tool_use_id: 't', action: 'track', file: 'plan/p.md', section: 'Work', doneRule: 'column=landed' })
   for (let i = 0; i < 30; i++) {
@@ -156,7 +161,12 @@ test('save: the record written to the store is capped', async ($, on) => {
   // which alone took this test past the 5 s limit under a loaded run
   const w = world(on, { files: FILES, sessionId: 's-cap', watchState: false })
   let n = 0
-  on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ag' + n++ }))
+  const spawned = transcripts(on)
+  on('agent.spawn', async (_$, e) => {
+    const agentId = 'ag' + n++
+    spawned(agentId, e.prompt)
+    return { model: 'claude-sonnet-5-5', agentId }
+  })
   on('turn.complete', async () => ({ text: '' }))
   await start($)
   await $.tool.call({ tool: TOOL, tool_use_id: 't', action: 'track', file: 'plan/p.md', section: 'Work', doneRule: 'column=landed' })
