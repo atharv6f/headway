@@ -930,9 +930,9 @@ async function paneIsOpen($): Promise<boolean> {
   }
 }
 
-async function setBand($, on: boolean): Promise<void> {
-  bandOff = !on
-  await $.store.set(BAND_PREF, on)
+async function setBand($, enabled: boolean): Promise<void> {
+  bandOff = !enabled
+  await $.store.set(BAND_PREF, enabled)
   $.ui.invalidate('ui.render')
 }
 
@@ -1319,11 +1319,11 @@ async function joinHints($, agentId: string, step: { model?: string; effort?: st
 function registerTracking(on) {
   // Observed, never answered: the spawn is recorded from the event and passed on as it came; the
   // agent's first step joins its agentId to the record (joinHints).
-  on('agent.spawn', async ($, e, next) => {
-    await guarded($, 'agent.spawn', () => recordSpawn($, e))
-    return next(e)
-  }).catch(async ($, e, next) => {
-    return next(e)
+  on('agent.spawn', async ($, spawnEvent, passOn) => {
+    await guarded($, 'agent.spawn', () => recordSpawn($, spawnEvent))
+    return passOn(spawnEvent)
+  }).catch(async ($, spawnEvent, passOn) => {
+    return passOn(spawnEvent)
   }) // tracking never gates a spawn: fail open
 
   // Main loop vs subagent: a subagent's step carries `agentId`, the main loop's does not.

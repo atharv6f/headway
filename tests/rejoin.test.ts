@@ -315,7 +315,7 @@ for (const background of [true, false]) {
 
 // The Claude plugin directory's rule: a hook on agent.spawn passes the event on with a literal
 // `return next(e)`. The registered handler and its fail-open .catch are read as source text.
-test('agent.spawn: every path of the hook ends with a literal `return next(e)`', () => {
+test('agent.spawn: every path of the hook returns its next parameter called with its event parameter, and no name is reused', () => {
   const spawnHooks: Array<{ handler: Function; caught?: Function }> = []
   const chain = (entry?: { handler: Function; caught?: Function }) => ({
     catch(fn: Function) {
@@ -335,7 +335,13 @@ test('agent.spawn: every path of the hook ends with a literal `return next(e)`',
   for (const fn of [spawnHooks[0].handler, spawnHooks[0].caught]) {
     expect(fn).toBeDefined()
     const src = String(fn).trim()
-    expect(src).toMatch(/return next\(e\);?\s*\}$/)
+    const params = /^async\s*\(\s*\$\s*,\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)/.exec(src)
+    expect(params).not.toBeNull()
+    const [, event, pass] = params!
+    // unique names: the directory refuses a hook whose parameter names are declared elsewhere in the file
+    expect(['e', 'next']).not.toContain(event)
+    expect(['e', 'next']).not.toContain(pass)
+    expect(src).toMatch(new RegExp('return ' + pass + '\\(' + event + '\\);?\\s*\\}$'))
     expect(src.match(/\breturn\b/g)?.length).toBe(1)
   }
 })

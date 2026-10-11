@@ -1,6 +1,6 @@
 {
   "name": "headway",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Goal, task and agent progress above the Claude Code prompt — zero setup",
   "author": { "name": "atharv6f" },
   "license": "MIT",

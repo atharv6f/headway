@@ -48,7 +48,7 @@ function trimSeparators(p: string): string {
 }
 
 // Whether a resolved path is the directory or under it (SPEC 14), both as `$.fs.stat(..., { resolve:
-// true })` answers them. A Windows directory (`C:\...`, `\\host\...`) compares in any case and with
+// true })` answers them. A Windows directory (`C:\...` or a UNC share path) compares in any case and with
 // either slash; a sibling that only shares the prefix (`/wx` for `/w`) is outside.
 export function insideDir(path: string, dir: string): boolean {
   const win = /^[A-Za-z]:([\\/]|$)/.test(dir) || dir.startsWith('\\\\')

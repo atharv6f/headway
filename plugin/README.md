@@ -355,7 +355,7 @@ plugin loaded with `--plugin-dir`) is treated as having no model.
 ## Cost and usage
 
 - **Session cost** (`$12.34` on band line 3 and in the Usage tab) is the engine's own ledger figure,
-  the same one Claude Code's session cost shows: `/cost` on an API-key account, and on a subscription
+  the same one Claude Code's session cost shows: `/cost` on a pay-as-you-go account, and on a subscription
   plan the usage view in settings rather than `/cost`. It is exact. `cost n/a` means the engine
   reported none.
 - **Per-agent cost** is an estimate, always labelled `est.`: the agent's token counts from its
@@ -511,8 +511,9 @@ hook is caught and logged to the debug log, and the event goes on as it would wi
 
 ### Text headway adds to tool results
 
-headway does not stand in for any Claude Code tool: every tool runs, and the only tool headway
-answers is its own, `mcp__headway__headway`. Three of its hooks return something other than what
+headway stands in for exactly one tool, its own `mcp__headway__headway` (registered by headway
+with `$.tool.register`): its `tool.call` hook is that tool's implementation and answers every call
+to it. It stands in for no Claude Code tool: every other tool runs. Three of its hooks return something other than what
 the tool gave back, each only by adding a line to the result's `context` (text Claude reads after
 the result; the result itself is untouched), and only in these cases:
 
