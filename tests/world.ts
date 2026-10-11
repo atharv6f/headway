@@ -2,7 +2,7 @@ import { mock } from 'claude-code/testing'
 
 // The world beneath the plugin for the tool, command and persistence tests: files by path, a store
 // in memory that records each write with the clock's time, the session id, panes and toasts.
-export const TOOL = 'mcp__waypoint__waypoint'
+export const TOOL = 'mcp__headway__headway'
 
 export interface World {
   clock: ReturnType<typeof mock.clock>
@@ -22,9 +22,9 @@ export interface World {
   enabledPlugins: Record<string, boolean> | 'throws' // what `$.settings.read()` answers; a test may change it
   themeRow: string | undefined // the Claude Code `theme` row of `$.config.list()`
   toasts: string[]
-  processRuns: number // a subprocess waypoint ran (it must not)
-  touched: string[] // every path waypoint read, statted or listed, in order
-  reads: string[] // every path waypoint read, in order
+  processRuns: number // a subprocess headway ran (it must not)
+  touched: string[] // every path headway read, statted or listed, in order
+  reads: string[] // every path headway read, in order
 }
 
 export function world(
@@ -53,7 +53,7 @@ export function world(
   // a test that serves `$.state` itself (snapshotState) watches it there
   if (o.watchState !== false) {
     on('state.set', async ($, e, next) => {
-      if (e.plugin === 'waypoint') w.last[e.key] = e.value
+      if (e.plugin === 'headway') w.last[e.key] = e.value
       return next(e)
     })
   }
@@ -114,7 +114,7 @@ export function world(
   on('config.list', async () => ({ value: w.themeRow === undefined ? [] : [{ key: 'theme', label: 'Theme', kind: 'choice', value: w.themeRow }] }))
   on('process.run', async () => {
     w.processRuns++
-    throw new Error('waypoint runs no subprocess')
+    throw new Error('headway runs no subprocess')
   })
   on('ui.toast', async (_$, e) => {
     w.toasts.push(e.text)
@@ -156,9 +156,9 @@ export const PLAN = `# Plan
 | T3 | third | | |
 `
 
-// The user's own `/waypoint <args>`, typed at the prompt: the engine stamps it `composer` (SPEC 9.2).
+// The user's own `/headway <args>`, typed at the prompt: the engine stamps it `composer` (SPEC 9.2).
 export function userCommand($, args: string) {
-  return $.command.run({ command: 'waypoint', args, origin: { kind: 'composer' } } as never)
+  return $.command.run({ command: 'headway', args, origin: { kind: 'composer' } } as never)
 }
 
 export async function start($) {
@@ -197,7 +197,7 @@ export function snapshotState(on) {
     end: () => {
       snap = null
     },
-    value: (key: string) => cur('waypoint/' + key).value,
+    value: (key: string) => cur('headway/' + key).value,
   }
 }
 

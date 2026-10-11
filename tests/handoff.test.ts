@@ -3,7 +3,7 @@ import { start, TOOL, world, userCommand } from './world.ts'
 import { text as nested } from './fixtures/plan-nested.ts'
 import { GUIDE_TEXT, TOOL_SPEC } from '../hooks/tool.ts'
 
-// The plan-mode handoff (SPEC 4.3, 4.4, 6): after an approval waypoint already tracks the plan, so a
+// The plan-mode handoff (SPEC 4.3, 4.4, 6): after an approval headway already tracks the plan, so a
 // `track` of the plan file and a full `report` list in the same turn are refused or turned into a no-op.
 const PLAN_FILE = '/home/u/.claude/plans/some-plan.md'
 const OTHER_PLAN = '/home/u/.claude/plans/other-plan.md'
@@ -26,7 +26,7 @@ const goalLine = async ($) => (await tool($, { action: 'state' })).split('\n')[0
 const LIST = { action: 'report', title: 'Mine', tasks: [{ title: 'x' }, { title: 'y' }] }
 
 test('guidance and tool description: the handoff sentence and the plan-mode note are present', async () => {
-  expect(GUIDE_TEXT).toContain("After plan-mode approval waypoint already tracks the plan: don't pin its file or report a new list; send `updates` with the ids `state` shows.")
+  expect(GUIDE_TEXT).toContain("After plan-mode approval headway already tracks the plan: don't pin its file or report a new list; send `updates` with the ids `state` shows.")
   expect(GUIDE_TEXT.split(/\s+/).length).toBeLessThanOrEqual(155)
   expect(TOOL_SPEC.description).toContain('plan FILE the user asked to track')
   expect(TOOL_SPEC.description).toContain('plan-mode plans are tracked automatically')
@@ -46,7 +46,7 @@ test('track: only the approved plan file, by its normalised path, is a no-op nam
   expect(await goalLine($)).toBe('goal: Tidy the notes folder — 0/4 done (plan)')
   // the reviewer's trap: another plan file is not refused as "this plan"; through the tool it is
   // outside the project (SPEC 14), and the user's own command pins it
-  expect(await tool($, { action: 'track', file: OTHER_PLAN })).toBe('refused: outside the project; ask the user to run /waypoint track ' + OTHER_PLAN)
+  expect(await tool($, { action: 'track', file: OTHER_PLAN })).toBe('refused: outside the project; ask the user to run /headway track ' + OTHER_PLAN)
   expect((await userCommand($, 'track ' + OTHER_PLAN)).text).toMatch(/^tracking \/home\/u\/\.claude\/plans\/other-plan\.md/)
   expect((w.last.filter as { file: string }).file).toBe(OTHER_PLAN)
 })
@@ -64,7 +64,7 @@ test('track: the approved file stays a no-op after the approval turn while the p
   // the project, so the tool refuses it without reading it (SPEC 14) and the user's own command pins it
   await tool($, { action: 'report', done: ['4'] })
   expect(await goalLine($)).toBe('goal: Tidy the notes folder — 4/4 done (plan)')
-  expect(await tool($, { action: 'track', file: PLAN_FILE })).toBe('refused: outside the project; ask the user to run /waypoint track ' + PLAN_FILE)
+  expect(await tool($, { action: 'track', file: PLAN_FILE })).toBe('refused: outside the project; ask the user to run /headway track ' + PLAN_FILE)
   expect(w.reads.filter((p) => p === PLAN_FILE)).toEqual([])
   expect((await userCommand($, 'track ' + PLAN_FILE)).text).toMatch(/^tracking \/home\/u\/\.claude\/plans\/some-plan\.md/)
   expect((w.last.filter as { file: string }).file).toBe(PLAN_FILE)
@@ -73,7 +73,7 @@ test('track: the approved file stays a no-op after the approval turn while the p
 test('track: with no plan-mode plan active, a plans-directory file is outside the project for the tool and pinned by the command', async ($, on) => {
   world(on, { files: FILES, env: ENV })
   await start($)
-  expect(await tool($, { action: 'track', file: OTHER_PLAN })).toBe('refused: outside the project; ask the user to run /waypoint track ' + OTHER_PLAN)
+  expect(await tool($, { action: 'track', file: OTHER_PLAN })).toBe('refused: outside the project; ask the user to run /headway track ' + OTHER_PLAN)
   expect((await userCommand($, 'track ' + OTHER_PLAN)).text).toMatch(/^tracking \/home\/u\/\.claude\/plans\/other-plan\.md/)
 })
 
@@ -235,7 +235,7 @@ test('approval note: a successful approval adds one context note naming the ids 
   await start($)
   const r = await approve($, SMALL)
   expect(noteOf(r)).toEqual([
-    'waypoint is tracking this plan: 1 Add greet.py · 2 Add README line · 3 Run it. As you work, call waypoint report with updates [{id, status: "partial"}] when you start a step and "done" when it is finished.',
+    'headway is tracking this plan: 1 Add greet.py · 2 Add README line · 3 Run it. As you work, call headway report with updates [{id, status: "partial"}] when you start a step and "done" when it is finished.',
   ])
   expect(noteOf(r)[0].split(/\s+/).length).toBeLessThanOrEqual(60)
 })
@@ -257,7 +257,7 @@ test('approval note: more than six steps list ids only, at most twelve then +n',
   await start($)
   const many = Array.from({ length: 14 }, (_, i) => i + 1 + '. step number ' + (i + 1)).join('\n') + '\n'
   const note = noteOf(await approve($, many))[0]
-  expect(note).toContain('waypoint is tracking this plan: ids 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, +2.')
+  expect(note).toContain('headway is tracking this plan: ids 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, +2.')
   expect(note.split(/\s+/).length).toBeLessThanOrEqual(60)
 })
 

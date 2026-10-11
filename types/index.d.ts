@@ -4,7 +4,7 @@
 // planmode.ts (PlanMode, with the plan text beside it).
 declare module 'claude-code' {
   interface PluginState {
-    waypoint: {
+    headway: {
       filter: {
         file: string
         section?: string

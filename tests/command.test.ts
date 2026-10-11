@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { PLAN, start, TOOL, world, userCommand } from './world.ts'
 
-// The tool `mcp__waypoint__waypoint` and the `/waypoint` command, driven through the engine.
+// The tool `mcp__headway__headway` and the `/headway` command, driven through the engine.
 const FILES = { '/w/plan/p.md': PLAN, '/w/other.md': '# Other\n\n- [x] A1 one\n- [ ] A2 two\n' }
 
 async function tool($, input: Record<string, unknown>): Promise<string> {
@@ -113,20 +113,20 @@ test('command: track and status print text, untrack prints untracked, a bad form
   expect(r.text).toBe('tracking /w/plan/p.md § Work: landed 1 · published 1 · open 1 / 3 tasks, 1 groups')
   expect((await command($, 'status')).text?.split('\n')[0]).toBe('goal: Work — landed 1 · published 1 · open 1 / 3 (file: /w/plan/p.md § Work)')
   expect((await command($, 'untrack')).text).toBe('untracked')
-  expect((await command($, 'dance')).text).toMatch(/^usage: \/waypoint /)
+  expect((await command($, 'dance')).text).toMatch(/^usage: \/headway /)
 })
 
-test('command: bare /waypoint toggles the pane, a tab word opens it on that tab, close closes it', async ($, on) => {
+test('command: bare /headway toggles the pane, a tab word opens it on that tab, close closes it', async ($, on) => {
   const w = world(on, { files: FILES })
   await start($)
   expect(await command($, '')).toEqual({})
-  expect(w.opens.map((o) => o.id)).toEqual(['waypoint'])
+  expect(w.opens.map((o) => o.id)).toEqual(['headway'])
   expect(await command($, '')).toEqual({})
-  expect(w.closes).toEqual(['waypoint'])
+  expect(w.closes).toEqual(['headway'])
   expect(await command($, 'agents')).toEqual({})
   expect((w.last.ui as { tab: string }).tab).toBe('agents')
   expect(await command($, 'close')).toEqual({})
-  expect(w.closes).toEqual(['waypoint', 'waypoint'])
+  expect(w.closes).toEqual(['headway', 'headway'])
 })
 
 test('command: band off and on write the pref to the store', async ($, on) => {
@@ -141,7 +141,7 @@ test('command: band off and on write the pref to the store', async ($, on) => {
 const BAND_PROPS = { hasSurvey: false, isWorking: false, maxRows: 16, bodyColumns: 100, scroll: { offset: 0, bodyRows: 15 }, view: {} }
 
 async function bandShows($): Promise<boolean> {
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   const found = (await ui.find({ type: 'Text', text: /Work/ })) !== undefined
   await ui.unmount()
   return found
@@ -167,7 +167,7 @@ test('band: a reported list says reported after the goal count', async ($, on) =
   on('ui.render', async (u, e) => u.ui.resolve(e).Text({ children: ['below'] }))
   await start($)
   await tool($, { action: 'report', title: 'Work list', tasks: [{ id: 'S1', title: 'a', status: 'done' }] })
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   expect(await ui.find({ type: 'Text', text: /reported/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /1\/1 done/ })).toBeDefined()
   await ui.unmount()
@@ -200,7 +200,7 @@ test('command: the registration hint names every form, band off|on and status in
     return { value: { command: e.name } }
   })
   await start($)
-  const spec = specs.find((s) => s.name === 'waypoint')!
+  const spec = specs.find((s) => s.name === 'headway')!
   expect(spec.immediate).toBe(true)
   expect(spec.argumentHint).toBe('[track <path> ["section"] [column=..|check=..|auto] [partial=<column>] [groups=<path>] | untrack | plan|agents|log|usage | close | status | band off|on]')
 })

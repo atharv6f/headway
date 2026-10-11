@@ -776,6 +776,35 @@ test('current task: an older unfinished agent beats a newer finished one; a grou
   expect(bandCurrent(REL2, agents).current).toEqual({ id: 'API1', title: pyTitle, done: 0, total: 1, unit: 'agents' })
 })
 
+test('current task: every task done and no agent at work reads all done, with no task kept as current', async () => {
+  const plan = small('### T1: x\n- [x] **S1:** a\n- [x] **S2:** b\n')
+  expect(bandCurrent(plan, [])).toEqual({ marks: {}, allDone: true })
+  const { agents } = run([
+    (a) => spawnAgent(a, spawnEv({ agentId: 'd1', description: 'S2 go', at: 1 }), { plan }),
+    (a) => completeAgent(a, { at: 3, agentId: 'd1', reason: 'answer', answer: 'ok', durationMs: 1 }),
+  ])
+  expect(bandCurrent(plan, agents)).toEqual({ marks: {}, allDone: true })
+  expect(bandCurrent(plan, agents, 'S1')).toEqual({ marks: {}, allDone: true })
+  // an agent still at work, or a task still open, keeps the task as current
+  const live = spawnAgent([], spawnEv({ agentId: 'd2', description: 'S2 go', at: 1 }), { plan })
+  expect(bandCurrent(plan, live.agents).allDone).toBe(undefined)
+  expect(bandCurrent(plan, live.agents).current).toMatchObject({ id: 'S2', status: 'done' })
+  const open = small('### T1: x\n- [x] **S1:** a\n- [ ] **S2:** b\n')
+  expect(bandCurrent(open, agents).allDone).toBe(undefined)
+  expect(bandCurrent(null, []).allDone).toBe(undefined)
+})
+
+test('current task: a done task is marked done so its bar is not drawn in the partial colour', async () => {
+  const plan = small('### T1: x\n- [x] **S1:** a\n- [ ] **S2:** b\n')
+  const { agents } = run([
+    (a) => spawnAgent(a, spawnEv({ agentId: 'e1', description: 'S1 go', at: 1 }), { plan }),
+    (a) => completeAgent(a, { at: 3, agentId: 'e1', reason: 'answer', answer: 'ok', durationMs: 1 }),
+  ])
+  expect(bandCurrent(plan, agents).current).toEqual({ id: 'S1', title: 'a', done: 1, total: 1, unit: 'agents', status: 'done' })
+  expect(bandCurrent(plan, agents, 'S1').current).toMatchObject({ id: 'S1', status: 'done' })
+  expect(bandCurrent(plan, agents, 'S2').current?.status).toBe(undefined)
+})
+
 test('band marks count blocked, running and stalled agents across the plan', async () => {
   const { agents } = run([
     (a) => spawnAgent(a, spawnEv({ agentId: 'm1', description: 'R02-73 a', at: 0 }), { plan: REL2 }),
@@ -803,7 +832,7 @@ test('current task: a sub-checklist gives an items bar; an unmatched Agent-tool 
 
 const PLAN_CALLS = [
   { ordinal: 1, label: 'UI3 residual grep', phase: 'Build', requestedModel: 'haiku', effort: 'low', warnings: [] as string[] },
-  { ordinal: 2, label: 'R02-73 case read', phase: 'Verify', requestedModel: 'haiku', warnings: ['R2 waypoint: Workflow "w": 1 agent() call(s) without model or effort: "R02-73 case read". Pass both on every call.'] },
+  { ordinal: 2, label: 'R02-73 case read', phase: 'Verify', requestedModel: 'haiku', warnings: ['R2 headway: Workflow "w": 1 agent() call(s) without model or effort: "R02-73 case read". Pass both on every call.'] },
 ]
 
 test('addPlanned writes one queued planned record per call, matched against the plan; idempotent per tool call', async () => {
@@ -840,7 +869,7 @@ test('bindRun gives planned calls of a tool call their run; the spawn then joins
   expect(only(o, 'x1')).toMatchObject({ phase: 'Build', requestedModel: 'haiku', effort: 'low', agentIndex: 1, warnings: [] })
   o = spawnAgent(o.agents, spawnEv({ toolUseId: 'toolu_w', description: 'R02-73 case read', subagentType: 'workflow-subagent', model: 'haiku', workflow: { runId: 'wf_r', agentIndex: 2 }, agentId: 'x2' }), { plan: REL2 })
   expect(only(o, 'x2')).toMatchObject({ phase: 'Verify', requestedModel: 'haiku' })
-  expect(only(o, 'x2').warnings[0]).toMatch(/^R2 waypoint: Workflow/)
+  expect(only(o, 'x2').warnings[0]).toMatch(/^R2 headway: Workflow/)
   expect(o.agents.filter((a) => a.planned).length).toBe(0)
 })
 
@@ -858,7 +887,7 @@ test('dropPlanned removes a tool call planned records (a denied Workflow)', asyn
 })
 
 test('dispatch warnings ride the spawn onto the record', async () => {
-  const w = ['R1 waypoint: Agent "d" (scout) has no explicit model; x']
+  const w = ['R1 headway: Agent "d" (scout) has no explicit model; x']
   const o = spawnAgent([], spawnEv({ agentId: 'w1', subagentType: 'acme:scout', model: undefined, warnings: w }), { plan: null })
   expect(only(o, 'w1').warnings).toEqual(w)
 })
@@ -870,12 +899,12 @@ const ROLES = {
 }
 
 test('R3 after the fact: the first step of a scout that R1 flagged, resolved to opus, marks the row and logs', async () => {
-  const r1 = ['R1 waypoint: Agent "sweep" (scout) names no model; x']
+  const r1 = ['R1 headway: Agent "sweep" (scout) names no model; x']
   let o = spawnAgent([], spawnEv({ agentId: 'r1', description: 'sweep', subagentType: 'acme:scout', model: undefined, warnings: r1 }), { plan: null, roles: ROLES })
   o = stepStart(o.agents, { at: 10, agentId: 'r1', model: 'claude-opus-5-5', effort: 'high', roles: ROLES })
   const r = only(o, 'r1')
   expect(r.warnings.length).toBe(2)
-  expect(r.warnings[1]).toBe('R3 waypoint: scout "sweep" dispatched on opus; the role table expects sonnet.')
+  expect(r.warnings[1]).toBe('R3 headway: scout "sweep" dispatched on opus; the role table expects sonnet.')
   expect(o.log).toEqual([{ at: 10, kind: 'warn', ref: 'R3', role: 'scout', agentId: 'r1', detail: 'scout "sweep" dispatched on opus; the role table expects sonnet.' }])
   // a second step adds nothing
   const o2 = stepStart(o.agents, { at: 20, agentId: 'r1', model: 'claude-opus-5-5', effort: 'high', roles: ROLES })
@@ -887,7 +916,7 @@ test('R3 after the fact does not fire when R1 did not (the dispatch named a mode
   let o = spawnAgent([], spawnEv({ agentId: 'h1', description: 'tiny', subagentType: 'acme:hand', model: 'sonnet' }), { plan: null })
   o = stepStart(o.agents, { at: 10, agentId: 'h1', model: 'claude-opus-5-5', effort: 'high', roles: ROLES })
   const r = only(o, 'h1')
-  expect(r.warnings).toEqual(['R4 waypoint: hand "tiny" ran at effort high; the role table expects low.'])
+  expect(r.warnings).toEqual(['R4 headway: hand "tiny" ran at effort high; the role table expects low.'])
   expect(o.log.map((l) => l.kind + ':' + l.ref)).toEqual(['warn:R4'])
   const o2 = stepStart(o.agents, { at: 20, agentId: 'h1', model: 'claude-opus-5-5', effort: 'medium', roles: ROLES })
   expect(only(o2, 'h1').warnings.length).toBe(1)
@@ -907,7 +936,7 @@ test('a step that beat its spawn is still routed once the spawn lands', async ()
   let o = stepStart([], { at: 5, agentId: 'e1', model: 'claude-opus-5-5', effort: 'high', roles: ROLES })
   expect(only(o, 'e1').provisional).toBe(true)
   expect(o.log).toEqual([])
-  o = spawnAgent(o.agents, spawnEv({ agentId: 'e1', at: 6, description: 'late', subagentType: 'acme:scout', model: undefined, warnings: ['R1 waypoint: Agent "late" (scout) names no model; x'] }), { plan: null, roles: ROLES })
+  o = spawnAgent(o.agents, spawnEv({ agentId: 'e1', at: 6, description: 'late', subagentType: 'acme:scout', model: undefined, warnings: ['R1 headway: Agent "late" (scout) names no model; x'] }), { plan: null, roles: ROLES })
   const r = only(o, 'e1')
   expect(r.warnings.map((x) => x.slice(0, 2))).toEqual(['R1', 'R3'])
   expect(o.log.map((l) => l.kind + ':' + l.ref)).toEqual(['warn:R3'])

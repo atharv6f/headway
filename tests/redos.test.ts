@@ -70,7 +70,7 @@ test('pattern=: the command refuses it as an unknown argument, and the tool sche
 test('pattern=: through the command and the tool, the same plan pins by its own IDs', async ($, on) => {
   world(on, { files: { '/w/plan.md': PLAN } })
   await start($)
-  expect((await $.command.run({ command: 'waypoint', args: 'track plan.md pattern=(a+)+$', origin: { kind: 'composer' } } as never)).text).toBe('refused: unknown argument: pattern=(a+)+$')
+  expect((await $.command.run({ command: 'headway', args: 'track plan.md pattern=(a+)+$', origin: { kind: 'composer' } } as never)).text).toBe('refused: unknown argument: pattern=(a+)+$')
   const pinned = (await $.tool.call({ tool: TOOL, tool_use_id: 't1', action: 'track', file: 'plan.md', pattern: '(a+)+$' })).result as string
   expect(pinned).toMatch(/^tracking \/w\/plan\.md/)
   const state = (await $.tool.call({ tool: TOOL, tool_use_id: 't2', action: 'state' })).result as string

@@ -424,7 +424,7 @@ test('usage tab: cost without a ledger and a hint that is armed', async () => {
 test('usage tab: priced agents add up under est.', async () => {
   const a = [agent({ id: 'u1u1u1u1', estUsd: 0.42 }), agent({ id: 'u2u2u2u2', estUsd: 0.11 })]
   const t = texts(usageRows(data({ agents: a, tree: buildTree(PLAN, a) })))
-  expect(t[2]).toMatch(/^ agents +est\. \$0\.53 over 2 agents \(prices: claude-api skill, 2026-10-06\)/)
+  expect(t[2]).toMatch(/^ agents +est\. \$0\.53 over 2 agents \(prices as of 2026-10-06\)/)
 })
 
 test('usage tab: an agent on a model the price table lacks is marked est.? in its row and in the sum', async () => {
@@ -517,7 +517,7 @@ test('ascii: no unicode glyph from the table appears on any tab', async () => {
 
 // ---------------------------------------------------------------- the hooks, driven through the engine
 
-const PANE_PROPS = { title: 'Waypoint', isFocused: true, bodyColumns: 72, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 38 }, view: {} }
+const PANE_PROPS = { title: 'Headway', isFocused: true, bodyColumns: 72, placement: 'dock' as const, scroll: { offset: 0, bodyRows: 38 }, view: {} }
 
 function spawnInput(over: Record<string, unknown>) {
   return {
@@ -531,7 +531,7 @@ test('hooks: the pane draws the tab row and the plan tab; a tab button switches 
   mock.env(on, {})
   on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ab12cd34' }))
   await $.agent.spawn(spawnInput({ description: 'census of the seams' }))
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'Pane', requestId: 'waypoint', props: PANE_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'Pane', requestId: 'headway', props: PANE_PROPS })
   for (const k of ['tab-plan', 'tab-agents', 'tab-log', 'tab-usage', 'expand', 'hide', 'reread', 'quit']) expect(await ui.find({ key: k })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /no plan$/ })).toBeDefined()
   await ui.press({ key: 'tab-agents' })
@@ -553,7 +553,7 @@ test('hooks: a group row is a Button that toggles; e expands all; h hides done',
   mock.env(on, {})
   on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ab12cd34' }))
   await $.agent.spawn(spawnInput({ description: 'census of the seams' }))
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'Pane', requestId: 'waypoint', props: PANE_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'Pane', requestId: 'headway', props: PANE_PROPS })
   // no plan: the agent sits under Agents, which starts open
   expect(await ui.find({ key: 'row:g:agents' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /ab12/ })).toBeDefined()
@@ -582,9 +582,9 @@ test('hooks: q closes the pane', async ($, on) => {
     closed.push(e.id)
     return { value: undefined }
   })
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'Pane', requestId: 'waypoint', props: PANE_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'Pane', requestId: 'headway', props: PANE_PROPS })
   await ui.press({ key: 'quit' })
-  expect(closed).toEqual(['waypoint'])
+  expect(closed).toEqual(['headway'])
   await ui.unmount()
 })
 
@@ -611,8 +611,8 @@ async function pinned($, on, panes: unknown[]) {
 }
 
 test('hooks: a pane that is not placed expands the band with the pane body and letter hotkeys', async ($, on) => {
-  await pinned($, on, [{ id: 'waypoint', title: 'Waypoint', isShown: true, isFocused: false, isPlaced: false }])
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  await pinned($, on, [{ id: 'headway', title: 'Headway', isShown: true, isFocused: false, isPlaced: false }])
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   expect(await ui.find({ type: 'Text', text: /Plan/ })).toBeDefined()
   for (const [key, hotkey] of [['tab-plan', 'p'], ['tab-agents', 'a'], ['tab-log', 'l'], ['tab-usage', 'u'], ['close', 'x']]) {
     expect((await ui.find({ key }))?.props?.hotkey).toBe(hotkey)
@@ -625,8 +625,8 @@ test('hooks: a pane that is not placed expands the band with the pane body and l
 })
 
 test('hooks: a placed pane, or none, leaves the band to its lines', async ($, on) => {
-  await pinned($, on, [{ id: 'waypoint', title: 'Waypoint', isShown: true, isFocused: false, isPlaced: true }])
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  await pinned($, on, [{ id: 'headway', title: 'Headway', isShown: true, isFocused: false, isPlaced: true }])
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   expect(await ui.find({ type: 'Text', text: /Plan/ })).toBeDefined()
   expect(await ui.find({ key: 'tab-agents' })).toBeUndefined()
   await ui.unmount()
@@ -788,6 +788,15 @@ test('plan tab: a file group keeps the agents bar and the agents count', async (
   const g = groupRow(planView(data()).rows, /UI3 +One dark-mode/)
   expect(g.segs.some((x) => x.el === 'taskBar')).toBe(true)
   expect(rowText(g)).toContain('2/4 agents')
+})
+
+test('plan tab: a done file group draws its agents bar in the done colour, an unfinished one in the task colour', async () => {
+  const plan = parsePlan('### UI1: Dark\n- [x] **T1:** a\n- [x] **T2:** b\n')
+  if (!plan.ok) throw new Error(plan.error)
+  const a = [agent({ id: 'f1f1f1f1', taskIds: ['T2'], groupId: 'UI1', status: 'done' })]
+  const g = groupRow(planView(data({ agents: a, tree: buildTree(plan.plan, a) })).rows, /UI1 +Dark/)
+  expect(g.segs.some((x) => x.el === 'taskBar')).toBe(false)
+  expect(g.segs.find((x) => x.text.startsWith('█'))?.el).toBe('barFill')
 })
 
 test('plan tab: reported and plan-mode groups start expanded; a file group without agents does not', async () => {

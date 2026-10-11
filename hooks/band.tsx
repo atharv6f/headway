@@ -30,7 +30,7 @@ export interface CurrentData {
   done: number
   total: number
   unit: 'agents' | 'items' // agents finished / dispatched, or the task's own sub-checklist
-  status?: 'partial' // a partial task that no agent works: drawn by its status, not `0 agents`
+  status?: 'partial' | 'done' // partial: a task no agent works, drawn by its status, not `0 agents`; done: the task is done, its bar is drawn in the done colour
 }
 
 export interface Marks {
@@ -54,6 +54,7 @@ export interface BandData {
   ascii: boolean
   goal: GoalData | null // null: nothing pinned (the band draws for agents still at work)
   current?: CurrentData
+  allDone?: boolean // every task is done and no agent is at work: line 2 reads `all done`
   marks?: Marks
   line3?: Line3Data
 }
@@ -160,6 +161,14 @@ function currentRest(d: BandData, c: CurrentData): Seg[] {
 function currentLine(d: BandData, label: number, barW: number, room: number): Seg[] {
   const gl = GLYPHS[d.ascii ? 'ascii' : 'unicode']
   const c = d.current
+  if (d.allDone === true) {
+    return [
+      { text: ' ', el: 'text' },
+      { text: gl.done, el: 'doneGlyph' },
+      { text: ' ', el: 'text' },
+      { text: 'all done', el: 'taskDone' },
+    ]
+  }
   if (!c) {
     return [
       { text: ' ', el: 'queued' },
@@ -182,7 +191,7 @@ function currentLine(d: BandData, label: number, barW: number, room: number): Se
     { text: idText, el: 'id' },
     { text: pad(titleText, label - idLen), el: 'title' },
     { text: '  ', el: 'text' },
-    ...barSegs(b, 'taskBar', 'taskBar'),
+    ...(c.status === 'done' ? barSegs(b, 'barFill', 'barFill') : barSegs(b, 'taskBar', 'taskBar')),
     { text: '  ', el: 'text' },
     ...clip(rest, room),
   ]

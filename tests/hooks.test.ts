@@ -6,7 +6,7 @@ type Rec = { id: string; status: string; model?: string; effort?: string; role: 
 function watchState(on) {
   const last: Record<string, unknown> = {}
   on('state.set', async ($, e, next) => {
-    if (e.plugin === 'waypoint') last[e.key] = e.value
+    if (e.plugin === 'headway') last[e.key] = e.value
     return next(e)
   })
   return {
@@ -107,7 +107,7 @@ function toolBeneath(on, reply: (e: { tool: string }, $: any) => Record<string, 
   return toasts
 }
 
-const R1_SCOUT = 'waypoint: Agent "R02-41 scope read" (scout) names no model; pass model on every dispatch.'
+const R1_SCOUT = 'headway: Agent "R02-41 scope read" (scout) names no model; pass model on every dispatch.'
 
 test('router: an Agent call without model returns the note as context, toasts once, logs, and marks the row at spawn', async ($, on) => {
   mock.clock(on, { now: 1000 })
@@ -131,7 +131,7 @@ test('router: the note is appended to a context the result already has', async (
   watchState(on)
   toolBeneath(on, () => ({ result: 'ok', context: ['earlier note'] }))
   const result = await $.tool.call({ tool: 'Agent', description: 'd', subagent_type: 'hand', prompt: 'p', tool_use_id: 'toolu_a2' })
-  expect(result.context).toEqual(['earlier note', expect.stringContaining('waypoint: Agent "d" (hand) names no model')])
+  expect(result.context).toEqual(['earlier note', expect.stringContaining('headway: Agent "d" (hand) names no model')])
 })
 
 test('router: a deny result is returned unchanged, with no context and no pending mark', async ($, on) => {
@@ -184,7 +184,7 @@ phase('Verify')
 const b = await agent('Reply ok', { label: 'API1 endpoint list', phase: 'Verify', model: 'haiku' })
 return [a, b]`
 
-const R2_TINY = 'waypoint: Workflow "tiny": 1 agent() call(s) without model or effort: "API1 endpoint list". Pass both on every call.'
+const R2_TINY = 'headway: Workflow "tiny": 1 agent() call(s) without model or effort: "API1 endpoint list". Pass both on every call.'
 
 function wfSpawn(index: number, label: string, runId = 'wf_9') {
   return spawnInput({ tool_use_id: 'toolu_wf', description: label, subagentType: 'workflow-subagent', model: 'haiku', workflow: { runId, agentIndex: index } })
@@ -219,7 +219,7 @@ test('router: a name and a label carrying escape sequences reach the toast, the 
   const script = "export const meta = { name: 'ev\u001b]0;pwn\u0007il', description: 'd', phases: [] }\nawait agent('p', { label: 'a\u001b[31mb\u0007c' })"
   expect(script).toContain('\u001b')
   const result = await $.tool.call({ tool: 'Workflow', script, tool_use_id: 'toolu_e' })
-  const want = 'waypoint: Workflow "evil": 1 agent() call(s) without model or effort: "abc". Pass both on every call.'
+  const want = 'headway: Workflow "evil": 1 agent() call(s) without model or effort: "abc". Pass both on every call.'
   expect(result.context).toEqual([want])
   expect(toasts).toEqual([want])
   expect((st.agents() as Array<{ warnings: string[] }>)[0].warnings).toEqual(['R2 ' + want])
@@ -321,7 +321,7 @@ function usageBeneath(on, figures: { percent?: number; usd?: number }) {
 function watchUsage(on) {
   const seen = { writes: 0, last: undefined as UsageState | null | undefined }
   on('state.set', async ($, e, next) => {
-    if (e.plugin === 'waypoint' && e.key === 'usage') {
+    if (e.plugin === 'headway' && e.key === 'usage') {
       seen.writes++
       seen.last = e.value as UsageState | null
     }
@@ -579,8 +579,8 @@ test('containment: a band start that throws still registers the tool and the com
     return { value: undefined }
   })
   await $.session.start({ cwd: '/tmp', surface: null, isInteractive: false })
-  expect(registered.sort()).toEqual(['command:waypoint', 'tool:waypoint'])
-  expect(logs.some((l) => l.startsWith('waypoint: band: '))).toBe(true)
+  expect(registered.sort()).toEqual(['command:headway', 'tool:headway'])
+  expect(logs.some((l) => l.startsWith('headway: band: '))).toBe(true)
   await clock.advance(30_000)
 })
 
@@ -661,14 +661,14 @@ test('theme: a quiet session only stats the store file, every tenth second, and 
   const storeStats = t.calls.stats.filter((p) => p.includes('/plugins/store/')).length
   expect(storeStats).toBeGreaterThan(0)
   expect(storeStats).toBeLessThanOrEqual(32) // 30 ticks, the mtime at the read, and the size stat before the read
-  expect(t.calls.stats.filter((p) => !p.includes('/plugins/store/') && !p.endsWith('waypoint-roles.json')).length).toBe(0)
+  expect(t.calls.stats.filter((p) => !p.includes('/plugins/store/') && !p.endsWith('headway-roles.json')).length).toBe(0)
   expect(t.calls.processes).toBe(0)
 })
 
 test('theme: once something is tracked a changed store file is re-read at the next tenth second, an unchanged one is not', async ($, on) => {
   const t = themeWorld(on)
   await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
-  await $.tool.call({ tool: 'mcp__waypoint__waypoint', tool_use_id: 'a', action: 'track', file: '/w/plan.md' })
+  await $.tool.call({ tool: 'mcp__headway__headway', tool_use_id: 'a', action: 'track', file: '/w/plan.md' })
   await t.clock.advance(50_000)
   expect(t.calls.reads).toBe(1)
   t.touchStore()
@@ -681,7 +681,7 @@ test('theme: once something is tracked a changed store file is re-read at the ne
 test('theme: nothing in the plugin starts a subprocess, however long a tracked session runs', async ($, on) => {
   const t = themeWorld(on)
   await $.session.start({ cwd: '/w', surface: null, isInteractive: false })
-  await $.tool.call({ tool: 'mcp__waypoint__waypoint', tool_use_id: 'a', action: 'track', file: '/w/plan.md' })
+  await $.tool.call({ tool: 'mcp__headway__headway', tool_use_id: 'a', action: 'track', file: '/w/plan.md' })
   await t.clock.advance(5 * 60_000)
   expect(t.calls.processes).toBe(0)
 })

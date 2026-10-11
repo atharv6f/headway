@@ -1,7 +1,7 @@
 {
-  "name": "waypoint",
-  "version": "0.2.1",
-  "description": "Plan, task and agent progress beside your prompt",
+  "name": "headway",
+  "version": "0.3.0",
+  "description": "Goal, task and agent progress above the Claude Code prompt — zero setup",
   "author": { "name": "atharv6f" },
   "license": "MIT",
   "types": "./types/index.d.ts",
@@ -31,13 +31,13 @@
     "guideClaude": {
       "type": "boolean",
       "title": "Guide Claude",
-      "description": "Add a short guidance section to the system prompt so Claude reports plan steps to waypoint",
+      "description": "Add a short guidance section to the system prompt so Claude reports plan steps to headway",
       "default": true
     },
     "routerWarnings": {
       "type": "boolean",
       "title": "Router warnings",
-      "description": "Warn when an Agent call names no model and when a Workflow agent() call lacks model or effort; role rules apply only with a waypoint-roles.json file",
+      "description": "Warn when an Agent call names no model and when a Workflow agent() call lacks model or effort; role rules apply only with a headway-roles.json file",
       "default": true
     },
     "theme": {
@@ -50,13 +50,13 @@
     "quietToolRows": {
       "type": "boolean",
       "title": "Quiet tool rows",
-      "description": "Draw waypoint's own tool calls in the transcript as one dim line each, in place of the stock row with its JSON",
+      "description": "Draw headway's own tool calls in the transcript as one dim line each, in place of the stock row with its JSON",
       "default": true
     },
     "bandDefault": {
       "type": "string",
       "title": "Band default",
-      "description": "Whether the band shows before /waypoint band on or off has been run",
+      "description": "Whether the band shows before /headway band on or off has been run",
       "default": "on",
       "options": ["on", "off"]
     }

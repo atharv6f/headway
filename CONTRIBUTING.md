@@ -1,6 +1,6 @@
-# Contributing to waypoint
+# Contributing to headway
 
-waypoint is a Claude Code mod: a plugin whose one hooks module (`hooks/register.tsx`) registers
+headway is a Claude Code mod: a plugin whose one hooks module (`hooks/register.tsx`) registers
 every hook, and a set of pure modules beside it. [SPEC.md](SPEC.md) is the design; the code is
 the source of truth where the two differ, and a pull request that changes behaviour updates both.
 
@@ -12,15 +12,15 @@ Run your checkout as an inline plugin, from the repository root:
 claude --plugin-dir .
 ```
 
-If you also have waypoint installed from the marketplace, two copies would load and both would
+If you also have headway installed from the marketplace, two copies would load and both would
 draw. Disable the installed one for the session:
 
 ```
-claude --plugin-dir . --settings '{"enabledPlugins":{"waypoint@waypoint":false}}'
+claude --plugin-dir . --settings '{"enabledPlugins":{"headway@headway":false}}'
 ```
 
-An inline plugin is `waypoint@inline`; its settings come from `--settings` as
-`{"pluginConfigs":{"waypoint@inline":{"options":{"compactAtPercent":1}}}}` (that example forces
+An inline plugin is `headway@inline`; its settings come from `--settings` as
+`{"pluginConfigs":{"headway@inline":{"options":{"compactAtPercent":1}}}}` (that example forces
 the compact hint early). Hook faults go to the debug log (`$.ui.log(..., { to: 'debug' })`), so
 `claude --debug` shows them.
 
@@ -59,10 +59,10 @@ the hooks module. The analyser's rules, which shape the code layout:
   no bare package names.
 - **One hook per event and matcher.** A second `on('<event>', { <same matcher> })` in the module is
   refused. `ui.render` serves the band and the pane through `component: ['AbovePrompt', 'Pane']`, and
-  the transcript rows of waypoint's own tool through `component: ['ToolUse', 'ToolResult']` with a
+  the transcript rows of headway's own tool through `component: ['ToolUse', 'ToolResult']` with a
   `props: { tool }` matcher; the `tool.call` hooks are distinct `{ tool }` matchers on the one event.
 - **Gating hooks catch their own faults.** A hook that stands between the engine and a tool call
-  or a spawn ends in `.catch(($, e, next) => next(e))`, so a bug in waypoint never blocks the
+  or a spawn ends in `.catch(($, e, next) => next(e))`, so a bug in headway never blocks the
   work it is watching.
 
 ## Adding a plan source
@@ -85,7 +85,7 @@ plain `claude`.
 ## Releasing
 
 1. Bump `version` in `.claude-plugin/plugin.json` (a manifest change reaches an installed copy only
-   through `claude plugin update waypoint@waypoint` plus a restart, so every behaviour change that
+   through `claude plugin update headway@headway` plus a restart, so every behaviour change that
    users should see ships with a bump).
 2. Run the tests and the strict validation.
 3. Commit, tag `v<version>`, push the tag. The marketplace is this repository, so the tag is the

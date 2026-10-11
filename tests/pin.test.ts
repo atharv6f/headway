@@ -50,8 +50,8 @@ test('paths are made absolute against the cwd', async () => {
 })
 
 test('a read failure is a plain sentence with the path as typed', async () => {
-  expect(readFailure(new Error('waypoint: $.fs.read(/w/nope.md) failed: ENOENT'), 'nope.md')).toBe('file not found: nope.md')
+  expect(readFailure(new Error('headway: $.fs.read(/w/nope.md) failed: ENOENT'), 'nope.md')).toBe('file not found: nope.md')
   expect(readFailure(Object.assign(new Error('x'), { code: 'ENOENT' }), '../nope.md')).toBe('file not found: ../nope.md')
-  expect(readFailure(new Error('waypoint: $.fs.read(/w/p.md) failed: EACCES'), 'p.md')).toBe('cannot read p.md')
+  expect(readFailure(new Error('headway: $.fs.read(/w/p.md) failed: EACCES'), 'p.md')).toBe('cannot read p.md')
   expect(readFailure('boom', 'p.md')).toBe('cannot read p.md')
 })

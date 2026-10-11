@@ -158,6 +158,22 @@ test('line 2: current task, its bar lined up under the goal bar, agents count an
   expect(sp.find((s) => s.text === '● 2')!.el).toBe('running')
 })
 
+test('line 2 when everything is done reads all done in the done colour; ascii uses +', async () => {
+  const l2 = bandLines({ ...PLAIN, allDone: true })[1]
+  expect(plain(l2)).toBe(' ✓ all done')
+  expect(l2.every((s) => s.el === 'doneGlyph' || s.el === 'taskDone' || s.el === 'text')).toBe(true)
+  expect(l2.find((s) => s.text === '✓')!.el).toBe('doneGlyph')
+  expect(l2.find((s) => s.text === 'all done')!.el).toBe('taskDone')
+  expect(plain(bandLines({ ...PLAIN, ascii: true, allDone: true })[1])).toBe(' + all done')
+})
+
+test('line 2 draws a done task\'s agent bar in the done colour, never the partial one', async () => {
+  const l2 = bandLines({ ...PLAIN, current: { id: 'S2', title: 'b', done: 1, total: 1, unit: 'agents', status: 'done' } })[1]
+  expect(l2.find((s) => s.text.startsWith('█'))!.el).toBe('barFill')
+  expect(l2.some((s) => s.el === 'taskBar')).toBe(false)
+  expect(plain(l2).endsWith('1/1 agents')).toBe(true)
+})
+
 test('line 2 marks: warning and blocked come before stalled', async () => {
   const l2 = bandLines({
     ...PLAIN,

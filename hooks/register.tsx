@@ -38,25 +38,25 @@ import type { SourceLabels, SourceTag, Sources } from './sources.ts'
 // action named, until the next spawn; `goal` is the summary of the poll's last parse that the band
 // draws; `theme` the resolved skins look; `agents` and `log` are written by the agent hooks; `ui`
 // is the pane's tab and expand state; `usage` is the context and session figures (M6 writes it).
-const filterAtom = atom({ plugin: 'waypoint', key: 'filter' } as const, null as Filter | null)
-const goalAtom = atom({ plugin: 'waypoint', key: 'goal' } as const, null)
-const themeAtom = atom({ plugin: 'waypoint', key: 'theme' } as const, null)
-const agentsAtom = atom({ plugin: 'waypoint', key: 'agents' } as const, [] as AgentRecord[])
-const logAtom = atom({ plugin: 'waypoint', key: 'log' } as const, [] as LogEntry[])
-const uiAtom = atom({ plugin: 'waypoint', key: 'ui' } as const, DEFAULT_UI as UiState)
-const usageAtom = atom({ plugin: 'waypoint', key: 'usage' } as const, null as UsageData | null)
-const reportAtom = atom({ plugin: 'waypoint', key: 'report' } as const, null as Reported | null)
-const focusAtom = atom({ plugin: 'waypoint', key: 'focus' } as const, null as string | null)
+const filterAtom = atom({ plugin: 'headway', key: 'filter' } as const, null as Filter | null)
+const goalAtom = atom({ plugin: 'headway', key: 'goal' } as const, null)
+const themeAtom = atom({ plugin: 'headway', key: 'theme' } as const, null)
+const agentsAtom = atom({ plugin: 'headway', key: 'agents' } as const, [] as AgentRecord[])
+const logAtom = atom({ plugin: 'headway', key: 'log' } as const, [] as LogEntry[])
+const uiAtom = atom({ plugin: 'headway', key: 'ui' } as const, DEFAULT_UI as UiState)
+const usageAtom = atom({ plugin: 'headway', key: 'usage' } as const, null as UsageData | null)
+const reportAtom = atom({ plugin: 'headway', key: 'report' } as const, null as Reported | null)
+const focusAtom = atom({ plugin: 'headway', key: 'focus' } as const, null as string | null)
 // The approved plan-mode plan (SPEC 4.4): its parsed steps and, in `$.state` only, its text.
 type PlanModeState = PlanMode & { text?: string }
-const planAtom = atom({ plugin: 'waypoint', key: 'plan' } as const, null as PlanModeState | null)
+const planAtom = atom({ plugin: 'headway', key: 'plan' } as const, null as PlanModeState | null)
 // The prompt labels (SPEC 4.8): each in-memory source's, the prompt line of the turn that started it;
 // and `prompt`, the newest qualifying composer prompt line, which the next source to start takes.
-const labelAtom = atom({ plugin: 'waypoint', key: 'label' } as const, {} as SourceLabels)
-const promptAtom = atom({ plugin: 'waypoint', key: 'prompt' } as const, null as string | null)
+const labelAtom = atom({ plugin: 'headway', key: 'label' } as const, {} as SourceLabels)
+const promptAtom = atom({ plugin: 'headway', key: 'prompt' } as const, null as string | null)
 
 // The task-tool list (SPEC 4.5): what TaskCreate, TaskUpdate and TodoWrite of the main loop made.
-const tasksAtom = atom({ plugin: 'waypoint', key: 'tasks' } as const, null as TaskItem[] | null)
+const tasksAtom = atom({ plugin: 'headway', key: 'tasks' } as const, null as TaskItem[] | null)
 
 const MIN = 60_000
 
@@ -64,7 +64,7 @@ const MIN = 60_000
 
 // The theme is read once at session start and again only when the skins store file or the theme file
 // changed (an mtime stat on every fifth 2 s tick), or when the skins plugin was enabled or disabled.
-// A quiet waypoint (no plan, no agents) stats the store file alone and defers the re-read until it
+// A quiet headway (no plan, no agents) stats the store file alone and defers the re-read until it
 // has something to draw. No subprocess is run (SPEC 11).
 const THEME_EVERY_TICKS = 5
 let toasted = false
@@ -78,7 +78,7 @@ let themeMode: ThemeMode = 'auto'
 let routerOn = true
 let guideOn = true
 let quietOn = true
-const TOOL_NAME = 'mcp__waypoint__waypoint'
+const TOOL_NAME = 'mcp__headway__headway'
 let bandDefaultOff = false
 
 // The plan-mode handoff (SPEC 4.3, 4.4): the approved plan's file, and whether the approval is still
@@ -188,7 +188,7 @@ function storeRe(marketplace: string): RegExp {
 async function toastOnce($, reason: string) {
   if (toasted) return
   toasted = true
-  await $.ui.toast('waypoint: skins theme unreadable, using ANSI colours (' + reason + ')')
+  await $.ui.toast('headway: skins theme unreadable, using ANSI colours (' + reason + ')')
 }
 
 // Which colours to draw: skins' palette when `theme` and the settings say so (SPEC 11), else plain.
@@ -249,7 +249,7 @@ function themeSig(entry: SkinsEntry | undefined): string {
   return themeMode + ':' + (entry ? entry.marketplace + ':' + entry.enabled : '-')
 }
 
-// The band pref, read from the store at session start and kept here for the band: `/waypoint band
+// The band pref, read from the store at session start and kept here for the band: `/headway band
 // on|off` is stored and beats `bandDefault`, which stands until the command has been run.
 let bandOff = false
 
@@ -408,7 +408,7 @@ type ReadOutcome = { ok: true; text: string } | { ok: false; error: string }
 const PLAN_MAX = 2 * 1024 * 1024
 const GROUP_MAP_MAX = 256 * 1024
 
-// Why a stat's answer is not a file waypoint reads: not a regular file, or over `max` bytes; else none.
+// Why a stat's answer is not a file headway reads: not a regular file, or over `max` bytes; else none.
 function unreadable(st: { kind?: string; size?: number }, max: number): string | undefined {
   if (st.kind !== 'file') return 'not a regular file'
   if (!(typeof st.size === 'number' && st.size <= max)) return 'file too large'
@@ -597,7 +597,7 @@ async function pollTick($): Promise<void> {
 // ---- M4: the pane and the expanded band ------------------------------------------------------
 // Pure trees and rows live in pane.tsx; these top-level functions take `$` and do the calling.
 
-const PANE_ID = 'waypoint'
+const PANE_ID = 'headway'
 const PANE_REDRAW_MS = 5000
 let paneTimer: { cancel: () => void } | undefined
 let compactAt = 70
@@ -617,7 +617,7 @@ async function safely(work: Promise<unknown>): Promise<void> {
 // happened, and the work is dropped.
 function fault($, where: string, err: unknown): void {
   try {
-    $.ui.log('waypoint: ' + where + ': ' + (err instanceof Error ? err.message : String(err)), { to: 'debug' })
+    $.ui.log('headway: ' + where + ': ' + (err instanceof Error ? err.message : String(err)), { to: 'debug' })
   } catch {
     // nowhere left to tell
   }
@@ -673,7 +673,7 @@ async function rereadPlan($): Promise<void> {
 
 async function openPane($, tab?: Tab): Promise<void> {
   await update($, uiAtom, (u) => ({ ...u, tab: tab ?? u.tab, opened: true }))
-  await $.ui.open({ id: PANE_ID, title: 'Waypoint', focus: true, rows: 18, columns: 72 })
+  await $.ui.open({ id: PANE_ID, title: 'Headway', focus: true, rows: 18, columns: 72 })
   paneTimer?.cancel()
   // Elapsed times and "step 14m ago" age without any event; redraw while the pane is up.
   paneTimer = $.clock.every(PANE_REDRAW_MS, () => {
@@ -708,12 +708,12 @@ async function drawPane($, e, next) {
   return paneTree(ui, view.theme, view.data, paneHandlers($))
 }
 
-// ---- M7: the model tool, the /waypoint command, persistence ------------------------------------
+// ---- M7: the model tool, the /headway command, persistence ------------------------------------
 // The tool's `track` and the command's `track` share `pin`; `status` and the tool's `state` share
 // `stateText`. Every write to filter, report, agents or log schedules a save (`scheduleSave`).
 
 const ARGUMENT_HINT = '[track <path> ["section"] [column=..|check=..|auto] [partial=<column>] [groups=<path>] | untrack | plan|agents|log|usage | close | status | band off|on]'
-const USAGE = 'usage: /waypoint ' + ARGUMENT_HINT
+const USAGE = 'usage: /headway ' + ARGUMENT_HINT
 
 // Pins a filter: refused unless the plan reads and parses. The filter already pinned only re-reads
 // the plan and logs `re-read`. Another filter replaces the old one, clears the focus and the compact
@@ -864,7 +864,7 @@ async function stateText($, logEntries: unknown): Promise<string> {
 
 // A pin made on Claude's behalf (SPEC 14), through the model tool, lands only inside the project: the
 // plan file and the group map must land, every link followed, under the session directory's own real
-// path, since what waypoint reads flows back to Claude through `state` outside Claude Code's
+// path, since what headway reads flows back to Claude through `state` outside Claude Code's
 // permissions. A path that does not stat keeps the plain refusal; one that stats without a real path
 // is outside. Answers the filter with its bounds, which every later read of the pin holds to
 // (readText), or the refusal.
@@ -883,7 +883,7 @@ async function boundedFilter($, filter: Filter, typed: Typed): Promise<{ filter:
     const bound = real !== undefined && root !== undefined && insideDir(real, root) ? root : undefined
     if (bound === undefined) {
       const again = typed.file + (filter.groupMap ? ' groups=' + (typed.groupMap ?? filter.groupMap) : '')
-      return { refusal: 'refused: outside the project; ask the user to run /waypoint track ' + clean(again) }
+      return { refusal: 'refused: outside the project; ask the user to run /headway track ' + clean(again) }
     }
     bounds[key] = bound
   }
@@ -1159,6 +1159,7 @@ async function drawBand($, e, next) {
     ascii: theme.icons === 'ascii',
     goal: goal === null ? null : { ...goal, note: goal.error !== undefined ? 'unreadable' : undefined },
     current: line2.current,
+    allDone: line2.allDone,
     marks: line2.marks,
     line3: line3Data({ usage: await read($, usageAtom), threshold: compactAt, log: await read($, logAtom) }),
   })
@@ -1169,7 +1170,7 @@ async function drawBand($, e, next) {
   return bandTree(ui, theme, lines, ui.Box({ flexDirection: 'column', children: [body, below] }))
 }
 
-// waypoint's own tool in the transcript (SPEC 10.4): ToolUse is one dim line with the result folded in,
+// headway's own tool in the transcript (SPEC 10.4): ToolUse is one dim line with the result folded in,
 // ToolResult draws nothing. Any other tool, or quietToolRows off, keeps the stock row.
 async function drawQuietRow($, e, next) {
   if (!quietOn || e.props.tool !== TOOL_NAME) return next(e)
@@ -1193,7 +1194,7 @@ function registerRender(on) {
   })
 }
 
-// The transcript rows of waypoint's own tool: the engine runs this hook for that tool's rows alone (a
+// The transcript rows of headway's own tool: the engine runs this hook for that tool's rows alone (a
 // props matcher), and it is not registered at all when quietToolRows is off.
 function registerQuietRows(on) {
   if (!quietOn) return
@@ -1320,7 +1321,7 @@ function registerTracking(on) {
 }
 
 // ---- P5: role rules from a file (SPEC 7) ----------------------------------------------------
-// R3 and R4 judge only the roles `<configDir>/waypoint-roles.json` names. It is read at session start
+// R3 and R4 judge only the roles `<configDir>/headway-roles.json` names. It is read at session start
 // and again when its mtime moves (checked every fifth 2 s tick). A file that does not parse turns
 // R3/R4 off, logs one line and toasts once per session; nothing here throws.
 
@@ -1329,7 +1330,7 @@ let rolesWatch: { mtime?: number } = {}
 let rolesToasted = false
 
 async function loadRoles($): Promise<void> {
-  const path = (await configDir($)) + '/waypoint-roles.json'
+  const path = (await configDir($)) + '/headway-roles.json'
   rolesWatch = { mtime: await mtimeOf($, path) }
   roles = undefined
   if (!routerOn || rolesWatch.mtime === undefined) return
@@ -1340,7 +1341,7 @@ async function loadRoles($): Promise<void> {
     roles = parsed.roles
     return
   }
-  const line = 'waypoint: ' + path + ' ignored, R3 and R4 are off (' + parsed.error + ')'
+  const line = 'headway: ' + path + ' ignored, R3 and R4 are off (' + parsed.error + ')'
   fault($, 'roles', new Error(line))
   if (rolesToasted) return
   rolesToasted = true
@@ -1353,7 +1354,7 @@ async function startRoles($): Promise<void> {
 }
 
 async function rolesTick($): Promise<void> {
-  const mtime = await mtimeOf($, (await configDir($)) + '/waypoint-roles.json')
+  const mtime = await mtimeOf($, (await configDir($)) + '/headway-roles.json')
   if (mtime !== rolesWatch.mtime) await loadRoles($)
 }
 
@@ -1450,7 +1451,7 @@ async function definitionStat($, path: string): Promise<{ mtime: number; real?: 
           : undefined
   if (why === undefined) return { mtime: st.mtimeMs, real: st.realPath }
   try {
-    $.ui.log('waypoint: definition ' + path + ' not read: ' + why, { to: 'debug' })
+    $.ui.log('headway: definition ' + path + ' not read: ' + why, { to: 'debug' })
   } catch {
     // nowhere left to tell
   }
@@ -1464,7 +1465,7 @@ async function definitionPlaced($, path: string, real: string | undefined, cfg: 
   const dir = path.slice(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')))
   if (real !== undefined && (await insideAny($, real, [() => dir, () => cfg]))) return true
   try {
-    $.ui.log('waypoint: definition ' + path + ' not read: it lands outside its directory', { to: 'debug' })
+    $.ui.log('headway: definition ' + path + ' not read: it lands outside its directory', { to: 'debug' })
   } catch {
     // nowhere left to tell
   }
@@ -1731,7 +1732,7 @@ function registerSession(on) {
     }
   })
 
-  on('command.run', { command: 'waypoint' }, async ($, e) => {
+  on('command.run', { command: 'headway' }, async ($, e) => {
     try {
       return await runCommand($, (e.args ?? '').trim(), e.origin?.kind === 'composer')
     } catch (err) {
@@ -1907,8 +1908,8 @@ export function register(on, options) {
     await guarded($, 'tool.register', () => $.tool.register(TOOL_SPEC))
     await guarded($, 'command.register', () =>
       $.command.register({
-        name: 'waypoint',
-        description: 'waypoint: open the pane, pin a plan, print the state',
+        name: 'headway',
+        description: 'headway: open the pane, pin a plan, print the state',
         argumentHint: ARGUMENT_HINT,
         immediate: true,
       }),

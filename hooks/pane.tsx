@@ -322,7 +322,7 @@ export function planView(d: PaneData): { rows: PaneRow[]; keys: string[]; allOpe
     const b = own
       ? bar({ done: gn.tasksDone, partial: gn.tasks.filter((x) => x.status === 'partial' || x.status === 'active').length, total: gn.tasksTotal, width: GROUP_BAR, ascii: d.ascii })
       : bar({ done: gn.dispatched > 0 ? gn.finished : gn.tasksDone, total: gn.dispatched > 0 ? gn.dispatched : gn.tasksTotal, width: GROUP_BAR, ascii: d.ascii })
-    const fill: Element = own ? 'barFill' : 'taskBar'
+    const fill: Element = own || gn.status === 'done' ? 'barFill' : 'taskBar'
     const mid: Element = own ? 'barPartial' : 'taskBar'
     const segs: PSeg[] = [
       ...(gn.kind === 'run' || gn.kind === 'agents' ? [t(cell(gn.title, groupLabelW), 'title')] : idTitle(gn.id, gn.title, groupLabelW)),

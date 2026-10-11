@@ -62,7 +62,7 @@ test('R1: no model on an Agent call fires, with the SPEC text', async () => {
   expect(w).toEqual({
     rule: 'R1',
     text:
-      'waypoint: Agent "R02-41 scope read" (scout) names no model; pass model on every dispatch.',
+      'headway: Agent "R02-41 scope read" (scout) names no model; pass model on every dispatch.',
   })
 })
 
@@ -143,14 +143,14 @@ test('definitionModel: a byte order mark before the frontmatter is tolerated', a
 })
 
 test('R3 at dispatch: the model a definition names is judged when the call names none; the call\'s own model wins', async () => {
-  expect(ruleR3({ description: 'd', subagentType: 'scout', definedModel: 'opus' }, ROLES)?.text).toBe('waypoint: scout "d" dispatched on opus; the role table expects sonnet.')
+  expect(ruleR3({ description: 'd', subagentType: 'scout', definedModel: 'opus' }, ROLES)?.text).toBe('headway: scout "d" dispatched on opus; the role table expects sonnet.')
   expect(ruleR3({ description: 'd', subagentType: 'scout', definedModel: 'opus', model: 'sonnet' }, ROLES)).toBe(undefined)
   expect(ruleR3({ description: 'd', subagentType: 'scout', definedModel: 'sonnet' }, ROLES)).toBe(undefined)
   expect(ruleR3({ description: 'd', subagentType: 'scout', definedModel: 'opus' })).toBe(undefined) // no role table
 })
 
 test('rules: a description with a line break or an escape is one clean line in the warning', async () => {
-  expect(ruleR1({ description: 'a\nb \u001b[31mc' })?.text).toBe('waypoint: Agent "a b c" (general-purpose) names no model; pass model on every dispatch.')
+  expect(ruleR1({ description: 'a\nb \u001b[31mc' })?.text).toBe('headway: Agent "a b c" (general-purpose) names no model; pass model on every dispatch.')
 })
 
 test('rules: an escape or OSC in the agent type, the model, the effort or the role file never reaches the text', async () => {
@@ -170,18 +170,18 @@ test('rules: an escape or OSC in the agent type, the model, the effort or the ro
     expect(typeof t).toBe('string')
     expect(/[\u0000-\u001f\u007f-\u009f]/.test(t!)).toBe(false)
   }
-  expect(texts[0]).toBe('waypoint: Agent "d" (scout) names no model; pass model on every dispatch.')
-  expect(texts[1]).toBe('waypoint: scout "d" dispatched on opus; the role table expects sonnet or haiku.')
-  expect(texts[3]).toBe('waypoint: scout "d" ran at effort high; the role table expects low or xhigh.')
+  expect(texts[0]).toBe('headway: Agent "d" (scout) names no model; pass model on every dispatch.')
+  expect(texts[1]).toBe('headway: scout "d" dispatched on opus; the role table expects sonnet or haiku.')
+  expect(texts[3]).toBe('headway: scout "d" ran at effort high; the role table expects low or xhigh.')
 })
 
 test('R3 at dispatch: the model family outside the role set fires with the SPEC text', async () => {
   expect(ruleR3({ description: 'sweep', subagentType: 'acme:scout', model: 'opus' }, ROLES)).toEqual({
     rule: 'R3',
-    text: 'waypoint: scout "sweep" dispatched on opus; the role table expects sonnet.',
+    text: 'headway: scout "sweep" dispatched on opus; the role table expects sonnet.',
   })
   expect(ruleR3({ description: 'x', subagentType: 'evaluator', model: 'claude-haiku-5-5' }, ROLES)?.text).toBe(
-    'waypoint: evaluator "x" dispatched on haiku; the role table expects fable or opus.',
+    'headway: evaluator "x" dispatched on haiku; the role table expects fable or opus.',
   )
   expect(ruleR3({ description: 'x', subagentType: 'implementer', model: 'haiku' }, ROLES)?.text).toContain('expects sonnet, opus or fable')
 })
@@ -207,7 +207,7 @@ test('an unknown role fires no R3 or R4; neither does a fork or an unknown model
 test('R4: effort outside the role set fires (log and mark text); inside or absent does not', async () => {
   expect(ruleR4({ description: 'sweep', subagentType: 'acme:hand', effort: 'high' }, ROLES)).toEqual({
     rule: 'R4',
-    text: 'waypoint: hand "sweep" ran at effort high; the role table expects low.',
+    text: 'headway: hand "sweep" ran at effort high; the role table expects low.',
   })
   expect(ruleR4({ description: 'x', subagentType: 'debugger', effort: 'high' }, ROLES)?.text).toContain('expects xhigh')
   expect(ruleR4({ description: 'x', subagentType: 'scout', effort: 'high' }, ROLES)).toBe(undefined)
@@ -227,7 +227,7 @@ test('R2: calls lacking model or effort are named by label, else ordinal, with t
   expect(r?.ordinals).toEqual([1, 3])
   expect(r?.warning).toEqual({
     rule: 'R2',
-    text: 'waypoint: Workflow "release-train": 2 agent() call(s) without model or effort: "R02-73 case read", #3. Pass both on every call.',
+    text: 'headway: Workflow "release-train": 2 agent() call(s) without model or effort: "R02-73 case read", #3. Pass both on every call.',
   })
 })
 
@@ -236,7 +236,7 @@ test('R2: nothing missing, or options that are dynamic, does not fire; a pattern
   expect(ruleR2({ name: 'w', calls: [] })).toBe(undefined)
   expect(ruleR2({ name: 'w', calls: [call(1, { dynamic: true, hasModel: false, hasEffort: false })] })).toBe(undefined)
   const r = ruleR2({ name: undefined, calls: [call(1, { hasModel: false, label: 'scan *' })] })
-  expect(r?.warning.text).toBe('waypoint: Workflow "(unnamed)": 1 agent() call(s) without model or effort: "scan *". Pass both on every call.')
+  expect(r?.warning.text).toBe('headway: Workflow "(unnamed)": 1 agent() call(s) without model or effort: "scan *". Pass both on every call.')
 })
 
 // ---------------------------------------------------------------- batch B: R2 size
@@ -249,14 +249,14 @@ test('R2: escape sequences and controls in the name and the labels never reach t
   for (const text of [r.warning.text, ...r.perCall.map((p) => p.warning.text)]) {
     expect(text).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f\u202a-\u202e]/)
   }
-  expect(r.warning.text).toBe('waypoint: Workflow "evil": 2 agent() call(s) without model or effort: "onetwo", "flip". Pass both on every call.')
+  expect(r.warning.text).toBe('headway: Workflow "evil": 2 agent() call(s) without model or effort: "onetwo", "flip". Pass both on every call.')
 })
 
 test('R2: each offending call gets its own warning naming that call only; the shared text is the full one', async () => {
   const r = ruleR2({ name: 'w', calls: [call(1, { hasEffort: false, label: 'one' }), call(2), call(3, { hasModel: false, label: 'three' })] })
   expect(r?.perCall.map((p) => p.ordinal)).toEqual([1, 3])
-  expect(r?.perCall[0].warning.text).toBe('waypoint: Workflow "w": 1 agent() call(s) without model or effort: "one". Pass both on every call.')
-  expect(r?.perCall[1].warning.text).toBe('waypoint: Workflow "w": 1 agent() call(s) without model or effort: "three". Pass both on every call.')
+  expect(r?.perCall[0].warning.text).toBe('headway: Workflow "w": 1 agent() call(s) without model or effort: "one". Pass both on every call.')
+  expect(r?.perCall[1].warning.text).toBe('headway: Workflow "w": 1 agent() call(s) without model or effort: "three". Pass both on every call.')
   expect(r?.warning.text).toContain('2 agent() call(s)')
 })
 

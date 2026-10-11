@@ -12,7 +12,7 @@ import { buildPlan } from './planbuild.ts'
 import type { SourceTag } from './sources.ts'
 
 export const TOOL_SPEC = {
-  name: 'waypoint',
+  name: 'headway',
   description:
     'Plan progress tracker. One tool, pick an action. track: pin a plan FILE the user asked to track (file, optional section, ' +
     'doneRule column=<name>|check=<name>|auto, partial=<column>, groupMap path); plan-mode plans are tracked automatically. ' +
@@ -59,21 +59,21 @@ export const TOOL_SPEC = {
 
 export type ReportStatus = 'open' | 'partial' | 'done'
 
-// SPEC 6: the one section waypoint adds to the system prompt.
-export const GUIDE_ID = 'waypoint:guide'
+// SPEC 6: the one section headway adds to the system prompt.
+export const GUIDE_ID = 'headway:guide'
 export const GUIDE_TEXT =
-  'waypoint tracks progress beside the prompt. When a request asks for two or more things (for example "rename the file, then ' +
-  'update its imports"), however few commands they take, call the `waypoint` tool once before any other work, with ' +
+  'headway tracks progress beside the prompt. When a request asks for two or more things (for example "rename the file, then ' +
+  'update its imports"), however few commands they take, call the `headway` tool once before any other work, with ' +
   '`action: "report"`, a goal `title` of at most 6 words, and `tasks: [{ title }]`, one short title per thing asked (ids optional). ' +
   'Mark each step as you go, not all at the end: before you start a step call `report` with `updates: [{ id, status: "partial" }]`; ' +
   'when it is finished, `status: "done"`. ' +
-  'After plan-mode approval waypoint already tracks the plan: don\'t pin its file or report a new list; ' +
+  'After plan-mode approval headway already tracks the plan: don\'t pin its file or report a new list; ' +
   'send `updates` with the ids `state` shows. ' +
   'Put the step\'s id in the description of any subagent you dispatch for it, as `step 3: ...`. For a request that asks for one ' +
   'thing, call nothing. Do not describe this tracking in your reply.'
 
 // The tool's name as the engine offers it: a plugin tool is `mcp__<plugin>__<name>`.
-const TOOL_SPEC_NAME = 'mcp__waypoint__' + TOOL_SPEC.name
+const TOOL_SPEC_NAME = 'mcp__headway__' + TOOL_SPEC.name
 
 // Renders that are not the main loop's prompt (a teammate's, a `/context` measure) or that draw
 // nowhere (a bare or print run). `lean` is not one: it marks the short body, which the main loop of
@@ -221,7 +221,7 @@ export function idsText(ids: readonly string[]): string {
   return unique.slice(0, IDS_SHOWN).join(', ') + (unique.length > IDS_SHOWN ? ', +' + (unique.length - IDS_SHOWN) : '')
 }
 
-// The note an approval adds to Claude's context (SPEC 4.4, 6): the plan's steps as waypoint holds
+// The note an approval adds to Claude's context (SPEC 4.4, 6): the plan's steps as headway holds
 // them and the two calls to make. Up to six steps show id and title (cut short), more show ids only.
 const NOTE_TITLES = 6
 const NOTE_TITLE_MAX = 24
@@ -230,7 +230,7 @@ export function planNote(steps: ReadonlyArray<{ id: string; title: string }>): s
     steps.length <= NOTE_TITLES
       ? steps.map((s) => s.id + ' ' + (s.title.length > NOTE_TITLE_MAX ? s.title.slice(0, NOTE_TITLE_MAX - 1).trimEnd() + '…' : s.title)).join(' · ')
       : 'ids ' + idsText(steps.map((s) => s.id))
-  return 'waypoint is tracking this plan: ' + list + '. As you work, call waypoint report with updates [{id, status: "partial"}] when you start a step and "done" when it is finished.'
+  return 'headway is tracking this plan: ' + list + '. As you work, call headway report with updates [{id, status: "partial"}] when you start a step and "done" when it is finished.'
 }
 
 // The reply to an updates call: the count, then each unknown id.
@@ -258,7 +258,7 @@ export interface StateData {
   filter: Filter | null
   goal: GoalSummary | null
   current?: CurrentData
-  steps?: Array<{ id: string; title: string; status: ReportStatus }> // a plan-mode plan's steps: their ids are waypoint's (4.4)
+  steps?: Array<{ id: string; title: string; status: ReportStatus }> // a plan-mode plan's steps: their ids are headway's (4.4)
   agents: AgentRecord[]
   log: LogEntry[]
   usage: UsageData | null
@@ -304,7 +304,7 @@ function logText(log: LogEntry[], n: number): string {
 export function stateBlock(d: StateData): string {
   const real = sortAgents(d.agents.filter(isShown))
   const lines = [goalLine(d), currentLine(d.current)]
-  // a plan-mode plan's ids are waypoint's (`2.1` where numbering restarts): listed so `report` can name them
+  // a plan-mode plan's ids are headway's (`2.1` where numbering restarts): listed so `report` can name them
   if (d.steps && d.steps.length > 0) lines.push('steps: ' + d.steps.map((s) => clean(s.id) + ' ' + clean(s.title, STEP_TITLE) + ' (' + s.status + ')').join(' · '))
   const blocked = real.filter((a) => a.status === 'blocked')
   if (blocked.length === 0) lines.push('blocked: none')

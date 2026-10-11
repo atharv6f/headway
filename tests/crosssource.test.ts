@@ -310,11 +310,11 @@ test('overlapping report updates each log only their own flips (the reviewer cas
   const held = new Promise<void>((r) => (release = r))
   let log: L[] = []
   on('state.set', async ($, e, next) => {
-    if (e.plugin === 'waypoint' && e.key === 'report' && hold) {
+    if (e.plugin === 'headway' && e.key === 'report' && hold) {
       hold = false
       await held
     }
-    if (e.plugin === 'waypoint' && e.key === 'log') log = e.value
+    if (e.plugin === 'headway' && e.key === 'log') log = e.value
     return next(e)
   })
   await start($)

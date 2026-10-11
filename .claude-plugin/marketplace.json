@@ -1,8 +1,8 @@
 {
-  "name": "waypoint",
+  "name": "headway",
   "owner": { "name": "atharv6f" },
-  "description": "The waypoint mod for Claude Code: plan, task and agent progress beside your prompt",
+  "description": "Headway: goal, task and agent progress above the Claude Code prompt",
   "plugins": [
-    { "name": "waypoint", "source": "./", "description": "Plan, task and agent progress beside your prompt" }
+    { "name": "headway", "source": "./", "description": "Goal, task and agent progress above the Claude Code prompt — zero setup" }
   ]
 }

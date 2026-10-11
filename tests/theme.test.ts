@@ -215,10 +215,10 @@ test('light or dark: SKINS_THEME, then the Claude Code theme row, then COLORFGBG
 // ---------------------------------------------------------------- skins installed and enabled (B1)
 
 test('skinsEntry: the marketplace comes from the enabledPlugins key; no key is not installed', async () => {
-  expect(skinsEntry({ 'waypoint@example-mods': true, 'skins@example-mods': true })).toEqual({ marketplace: 'example-mods', enabled: true })
+  expect(skinsEntry({ 'headway@example-mods': true, 'skins@example-mods': true })).toEqual({ marketplace: 'example-mods', enabled: true })
   expect(skinsEntry({ 'skins@other-market': false })).toEqual({ marketplace: 'other-market', enabled: false })
   expect(skinsEntry({ 'skins@a': false, 'skins@b': true })).toEqual({ marketplace: 'b', enabled: true })
-  expect(skinsEntry({ 'waypoint@example-mods': true, 'skinsy@x': true })).toBeUndefined()
+  expect(skinsEntry({ 'headway@example-mods': true, 'skinsy@x': true })).toBeUndefined()
   expect(skinsEntry({})).toBeUndefined()
   expect(skinsEntry(undefined)).toBeUndefined()
   expect(skinsEntry('skins@x')).toBeUndefined()

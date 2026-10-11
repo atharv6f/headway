@@ -204,7 +204,7 @@ async function tool($, input: Record<string, unknown>): Promise<string> {
 const goalLine = async ($) => (await tool($, { action: 'state' })).split('\n')[0]
 
 async function bandLine1($): Promise<string | undefined> {
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   const t = await ui.find({ type: 'Text', text: /◆/ })
   await ui.unmount()
   return t?.text as string | undefined

@@ -1,4 +1,4 @@
-// What waypoint keeps in `$.store` (pure): one record per session under `session:<id>`, the band
+// What headway keeps in `$.store` (pure): one record per session under `session:<id>`, the band
 // pref, and the 14-day prune rule. SPEC.md 3.3 and 8.1.
 import { agentRecency, isTerminal } from './agents.ts'
 import { clean, TASKS_MAX, TITLE_MAX } from './format.ts'

@@ -2,21 +2,21 @@ import { expect, test } from 'claude-code/testing'
 import { PLAN, start, TOOL, world } from './world.ts'
 import { insideDir } from '../hooks/pin.ts'
 
-// What waypoint reads on Claude's behalf stays inside what the user's own permissions would show it
+// What headway reads on Claude's behalf stays inside what the user's own permissions would show it
 // (SPEC 14): the model tool pins a file only inside the project; a Workflow script is read only from
 // the project or the Claude Code config directory; an agent definition only where it was found.
 const CFG = '/h/.claude'
 const ENV = { HOME: '/h' }
 const SECRET = '- [ ] S1 the secret line\n'
-const OUTSIDE = 'refused: outside the project; ask the user to run /waypoint track '
+const OUTSIDE = 'refused: outside the project; ask the user to run /headway track '
 const FROM_PROMPT = 'refused: run this from the prompt'
 
 async function tool($, input: Record<string, unknown>): Promise<string> {
   return (await $.tool.call({ tool: TOOL, tool_use_id: 'toolu_t', ...input })).result as string
 }
 // the user's own command: typed at the prompt, so the engine stamps it `composer`
-const command = ($, args: string) => $.command.run({ command: 'waypoint', args, origin: { kind: 'composer' } } as never)
-const commandFrom = ($, kind: string | undefined, args: string) => $.command.run({ command: 'waypoint', args, ...(kind ? { origin: { kind, ...(kind === 'plugin' ? { name: 'other' } : {}) } } : {}) } as never)
+const command = ($, args: string) => $.command.run({ command: 'headway', args, origin: { kind: 'composer' } } as never)
+const commandFrom = ($, kind: string | undefined, args: string) => $.command.run({ command: 'headway', args, ...(kind ? { origin: { kind, ...(kind === 'plugin' ? { name: 'other' } : {}) } } : {}) } as never)
 
 // ---------------------------------------------------------------- track through the model tool
 
@@ -56,7 +56,7 @@ test('tool track: a group map outside the project is refused; the project is its
   expect(await tool($, { action: 'track', file: 'plan.md' })).toMatch(/^tracking \/w\/plan\.md/)
 })
 
-// ---------------------------------------------------------------- who runs /waypoint track
+// ---------------------------------------------------------------- who runs /headway track
 
 test('command: from any origin but the prompt, track, untrack and band are refused and touch nothing', async ($, on) => {
   const w = world(on, { files: { '/w/plan.md': PLAN, '/h/.ssh/config': SECRET }, env: ENV })
@@ -198,7 +198,7 @@ test('tool track: the real path that was checked is what is read, so a link swap
   const w = world(on, { files: { '/w/plan.md': PLAN, '/w/docs/p.md': PLAN, '/w/g.json': '{"groups":[]}', '/w/docs/g.json': '{}', '/h/.ssh/config': SECRET, '/h/g.json': '{}' }, env: ENV })
   w.real['/w/docs/p.md'] = '/w/plan.md'
   w.real['/w/docs/g.json'] = '/w/g.json'
-  // each link is swapped to land outside right after waypoint's first stat of it
+  // each link is swapped to land outside right after headway's first stat of it
   w.afterStat = (path) => {
     if (path === '/w/docs/p.md') w.real[path] = '/h/.ssh/config'
     if (path === '/w/docs/g.json') w.real[path] = '/h/g.json'
@@ -268,7 +268,7 @@ test('tool track: a file that is not there keeps the plain refusal', async ($, o
 
 const FILE_SCRIPT = "export const meta = { name: 'fromfile', description: 'd', phases: [] }\nawait agent('p', { label: 'FILE-1' })"
 const INLINE_SCRIPT = "export const meta = { name: 'inline', description: 'd', phases: [] }\nawait agent('p', { label: 'INLINE-1' })"
-const r2Of = (name: string, label: string) => 'waypoint: Workflow "' + name + '": 1 agent() call(s) without model or effort: "' + label + '". Pass both on every call.'
+const r2Of = (name: string, label: string) => 'headway: Workflow "' + name + '": 1 agent() call(s) without model or effort: "' + label + '". Pass both on every call.'
 
 function workflowWorld(on, files: Record<string, string>) {
   const w = world(on, { files: { '/w/plan.md': PLAN, ...files }, env: ENV })

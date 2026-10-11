@@ -73,7 +73,7 @@ test('prompt label: a composer prompt first line, pasted tags stripped, slash co
   expect(promptLabel('Add a --name flag to hello.py\nand a test', 'composer')).toBe('Add a --name flag to hello.py')
   expect(promptLabel('\n\n<pasted_content id="ab12">\nGoal from a paste: tidy up\nsecond line\n</pasted_content id="ab12">\n', 'composer')).toBe('Goal from a paste: tidy up')
   expect(promptLabel('fix this <pasted_content id="x">trace</pasted_content id="x">', 'composer')).toBe('fix this trace')
-  expect(promptLabel('/waypoint status', 'composer')).toBe(undefined)
+  expect(promptLabel('/headway status', 'composer')).toBe(undefined)
   expect(promptLabel('  /compact', 'composer')).toBe(undefined)
   expect(promptLabel('<task-notification>\n<status>completed</status>', 'task-notification')).toBe(undefined)
   expect(promptLabel('from a script', 'sdk')).toBe(undefined)

@@ -7,7 +7,7 @@
 // comes first (opus-5-5 before opus-5, fable-5-1 before fable-5). A model id the table does not
 // name falls back to the sonnet-5-5 row (the current Sonnet) and is marked unknown (`est.?`).
 // Shown after the agents sum on the Usage tab.
-export const PRICES_NOTE = 'prices: claude-api skill, 2026-10-06'
+export const PRICES_NOTE = 'prices as of 2026-10-06'
 
 export type Row = [input: number, output: number, cacheRead: number, cacheWrite5m: number, cacheWrite1h: number]
 

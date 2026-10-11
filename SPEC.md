@@ -1,13 +1,13 @@
-# waypoint — specification (0.2)
+# headway — specification (0.2)
 
-waypoint is a Claude Code mod: a plugin with a hooks module that tracks the progress of whatever
+headway is a Claude Code mod: a plugin with a hooks module that tracks the progress of whatever
 Claude is working on and draws it in a band above the prompt and in a pane. It works out what the
 plan is from the best source it has (a plan file you pin, a list Claude reports, a plan-mode plan
 you approve, Claude's task tools, a workflow's phases), tracks every subagent under the step it
 works on, flags blocked and stalled agents, warns about dispatches that name no model, and shows
 what the session costs. One tool call tells Claude the same after `/compact`.
 
-This document specifies waypoint 0.2 as the code stands, and is the reference for contributors.
+This document specifies headway 0.2 as the code stands, and is the reference for contributors.
 Facts marked *verified* were checked on
 Claude Code 2.1.296 (appendix A). Where a fact could not be checked it is a probe in appendix B,
 not an assumption.
@@ -30,9 +30,9 @@ plugin with `source: "./"`. This is the layout a single-plugin mod repository in
 the two commands below, and the one the engine's plugin loader reads without a sub-directory.
 
 ```
-.claude-plugin/plugin.json          name "waypoint", version, description, license "MIT",
+.claude-plugin/plugin.json          name "headway", version, description, license "MIT",
                                     "types": "./types/index.d.ts", userConfig (section 13)
-.claude-plugin/marketplace.json     name "<marketplace>", owner, plugins: [{ name: "waypoint", source: "./" }]
+.claude-plugin/marketplace.json     name "<marketplace>", owner, plugins: [{ name: "headway", source: "./" }]
 hooks/hooks.json                    { "modules": ["./register.tsx"] }
 hooks/*.ts, hooks/*.tsx             section 15
 types/index.d.ts                    the `$.state` atoms
@@ -43,12 +43,12 @@ README.md  SPEC.md  LICENSE  CONTRIBUTING.md
 Install, inside Claude Code:
 
 ```
-/plugin marketplace add atharv6f/waypoint
-/plugin install waypoint@<marketplace>
+/plugin marketplace add atharv6f/headway
+/plugin install headway@headway
 ```
 
 then restart. Update with `claude plugin marketplace update <marketplace>` and
-`claude plugin update waypoint@<marketplace>`; a manifest change (`version`, `userConfig`) is
+`claude plugin update headway@<marketplace>`; a manifest change (`version`, `userConfig`) is
 picked up only by that update plus a restart.
 
 | Fact | Value |
@@ -153,7 +153,7 @@ plus the hook that writes its data.
 
 ### 4.2 Pinned file
 
-The user's plan file stays the only record; waypoint reads it and never writes it.
+The user's plan file stays the only record; headway reads it and never writes it.
 
 **Shapes.** Two generic shapes; a file may hold both, and each section is parsed independently.
 Line endings `\r\n` and lone `\r` are read as `\n`; a line is read to its first 8,192 characters
@@ -242,9 +242,9 @@ Plan tab footer as `n unmapped rows`. A task named by several groups appears und
 paths are made absolute against `$.session.cwd()` at pin time. A `track` through the model tool pins
 only inside the project (section 14): the file and the group map must land, every link followed
 (`$.fs.stat(path, { resolve: true }).realPath`), under the real path of the session directory, else
-`refused: outside the project; ask the user to run /waypoint track <file> [groups=<map>]`. There is
+`refused: outside the project; ask the user to run /headway track <file> [groups=<map>]`. There is
 no exception: a file under `<configDir>/plans` is outside the project like any other (4.4). A
-`/waypoint track` the user did not type is refused outright (9.2); the user's own `/waypoint track`
+`/headway track` the user did not type is refused outright (9.2); the user's own `/headway track`
 is not held to the project. Such a
 pin keeps that real directory as its `bounds` (`{ file, groupMap? }`, saved with the filter), and every
 read of the file or the map, at the pin and on each poll re-read, goes stat with links followed, then
@@ -267,7 +267,7 @@ logged (`task-done`, `task-partial`, `task-reopened`).
 
 ### 4.3 Reported plan (0.2: incremental updates)
 
-Claude calls the `waypoint` tool with `action: "report"` (section 9.1). Three forms:
+Claude calls the `headway` tool with `action: "report"` (section 9.1). Three forms:
 
 | Input | Effect |
 | :- | :- |
@@ -300,7 +300,7 @@ plan is fresh is refused (4.4, handoff).
 `result: { plan, isAgent, filePath }`, a rejection returns `isError: true` with a string `result`.
 Re-entering plan mode in the same session overwrites the same plan file.
 
-waypoint hooks `tool.call` `{ tool: 'ExitPlanMode' }`, calls `next(e)` first, and parses
+headway hooks `tool.call` `{ tool: 'ExitPlanMode' }`, calls `next(e)` first, and parses
 `result.plan` only when `!isError`. A rejected plan changes nothing. Each approval replaces the
 previous plan-mode plan (agents are re-matched, 4.1); a call with `e.agentId` (a subagent's plan)
 is ignored.
@@ -354,7 +354,7 @@ sub-steps.
 5. Progress: `report` `updates`/`done` by step ID; an agent matched to a step (5.3) makes it active
    while the agent runs. Nothing else flips a plan-mode step.
 
-**Handoff.** After an approval waypoint tells Claude the plan is tracked (6). Two calls Claude
+**Handoff.** After an approval headway tells Claude the plan is tracked (6). Two calls Claude
 might still make would hide the plan-mode source, so they are turned away while the approval is
 *fresh*. An approval that yields at least one step is fresh for its own turn only: until the main
 loop's first `turn.complete` after it, any `prompt.submit` (any origin, a slash command or a task
@@ -373,7 +373,7 @@ not in the session record.
   other file, another plan file under `<configDir>/plans/` included, and the approved file once the
   plan is finished or no longer drawn, is held to the project like any path (4.2, 14), so a file
   under `<configDir>/plans` is refused unread: the plan-mode plan comes from the ExitPlanMode result,
-  never from a read of its file. The user's own `/waypoint track` is not affected.
+  never from a read of its file. The user's own `/headway track` is not affected.
 - A full `report` list (`tasks`) while the approval is fresh, the plan-mode plan is the active
   source and it is not finished (`doneAt` unset) is refused: `refused: a plan from plan mode is
   tracked; send updates with its ids: 1.1, 1.2, …` (the same id list). Nothing is stored. Once the
@@ -383,8 +383,8 @@ not in the session record.
 faint for a short plan (live, P8: a three-step plan approved in plan mode, neither Haiku nor Sonnet
 sent a `report` update, the band stayed at 0/3). So a successful approval also adds one note to
 Claude's context: the hook returns the engine's result with `context: [...(result.context ?? []),
-note]` (the mechanism of the router notes, 7). The note is `waypoint is tracking this plan: <steps>.
-As you work, call waypoint report with updates [{id, status: "partial"}] when you start a step and
+note]` (the mechanism of the router notes, 7). The note is `headway is tracking this plan: <steps>.
+As you work, call headway report with updates [{id, status: "partial"}] when you start a step and
 "done" when it is finished.`, where `<steps>` is `<id> <title>` joined by ` · ` for up to six steps
 (a title over 24 characters cut with an ellipsis) and `ids <id list>` for more (the ids of the
 `track` reply: at most 12, then `, +<n>`); about 50 words at most. It is added only when the approval
@@ -407,7 +407,7 @@ takes the full list `{ todos: [{ content, status, activeForm }] }` with no ids. 
 `<configDir>/tasks/<session_id>/<id>.json` (`{ id, subject, description, activeForm, status, ... }`)
 and are removed as tasks complete; `TodoWrite` writes no file. Subagents have none of these tools.
 
-waypoint hooks `tool.call` for `TaskCreate`, `TaskUpdate` and `TodoWrite`, after `next(e)`, main
+headway hooks `tool.call` for `TaskCreate`, `TaskUpdate` and `TodoWrite`, after `next(e)`, main
 loop only (a call with `e.agentId` is ignored):
 
 | Call | Effect |
@@ -485,7 +485,7 @@ label and the newest prompt are kept in the session record.
 | :- | :- | :- |
 | `tool.call` `{ tool: 'Agent' }` | router rules at dispatch; the ID search text | `e.description`, `e.prompt`, `e.subagent_type`, `e.model`, `e.name`, `e.tool_use_id` |
 | `agent.spawn` | create the record; for a Workflow agent, the join (5.2) | `e.tool_use_id`, `e.description`, `e.subagentType`, `e.prompt`, `e.name`, `e.parentAgentId`, `e.workflow?.{runId, agentIndex}`; from `await next(e)`: `agentId`, `model`, or `deny` |
-| `tool.call` `{ tool: 'Workflow' }` | parse the script; rule R2, logged, toasted and noted only after `next(e)` and only when the call was not denied; after `next(e)`: `result.result.runId` | `$.fs.read` of where `e.scriptPath` lands when it lands inside the project or the Claude Code config directory and is a regular file of at most 256 KiB (the tool prefers it to `script`, so waypoint reads the same text; section 14), else `e.script` when it is at most 262,144 characters (256 Ki); a longer inline script is not parsed |
+| `tool.call` `{ tool: 'Workflow' }` | parse the script; rule R2, logged, toasted and noted only after `next(e)` and only when the call was not denied; after `next(e)`: `result.result.runId` | `$.fs.read` of where `e.scriptPath` lands when it lands inside the project or the Claude Code config directory and is a regular file of at most 256 KiB (the tool prefers it to `script`, so headway reads the same text; section 14), else `e.script` when it is at most 262,144 characters (256 Ki); a longer inline script is not parsed |
 | `turn.step` (async generator, `yield* next(e)`) | running status, last activity, model, effort, tokens | `e.agentId`, `e.model`, `e.effort`, `result.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, model}` |
 | `turn.complete` | final status, answer, duration | `e.agentId`, `e.reason`, `e.answer`, `e.durationMs`, `e.usage` |
 | `$.agent.list()` on the 15 s timer | `failed`/`killed` the events missed; `name` | `id`, `status`, `name`, `description` |
@@ -576,15 +576,15 @@ after a resume clears the mark and runs the three steps again.
 
 ## 6. Guiding Claude (0.2)
 
-waypoint adds one section to the system prompt through `prompt.compose`: after `await next(e)` it
-appends `{ id: 'waypoint:guide', text, scope: 'session' }` to `result.sections`. (The engine
+headway adds one section to the system prompt through `prompt.compose`: after `await next(e)` it
+appends `{ id: 'headway:guide', text, scope: 'session' }` to `result.sections`. (The engine
 documents the hook as a list of sections, each `shared` or `session`; a section appended after the
 engine's is `session`.) The section is left out when `guideClaude` is false, when a file is pinned
 (then the file is the record and `report` is not wanted), when the session draws nowhere
 (`e.surfaces` empty, or `e.traits` includes `bare` or `print`), when the render is not the main
 loop's prompt (`e.traits` includes `teammate` or `analysis`; not `lean`, the short body, which the
 main loop of Opus 5.5 takes: *verified* on 2.1.296, its traits are `['lean', 'skills']`), and when the request does not
-offer the tool: the section goes in only when `e.tools` holds `mcp__waypoint__waypoint`. *Verified*
+offer the tool: the section goes in only when `e.tools` holds `mcp__headway__headway`. *Verified*
 on 2.1.296: `e.tools` names deferred tools too (`TaskCreate` was listed while the model had to load
 it through ToolSearch), so no ToolSearch rule is needed. `PromptComposeInput` has no agent id, so a
 subagent's render is not told apart beyond these fields.
@@ -601,19 +601,19 @@ what to do. There is no way to withdraw a session section mid-session; the limit
 Text, as sent (153 words; the third wording tried, see appendix A17, with the goal `title` clause
 and the plan-mode handoff sentence added, A19 and A22):
 
-> waypoint tracks progress beside the prompt. When a request asks for two or more things (for
+> headway tracks progress beside the prompt. When a request asks for two or more things (for
 > example "rename the file, then update its imports"), however few commands they take, call the
-> `waypoint` tool once before any other work, with `action: "report"`, a goal `title` of at most 6
+> `headway` tool once before any other work, with `action: "report"`, a goal `title` of at most 6
 > words, and `tasks: [{ title }]`, one short title per thing asked (ids optional). Mark each step as
 > you go, not all at the end: before you start a step call `report` with `updates: [{ id, status:
-> "partial" }]`; when it is finished, `status: "done"`. After plan-mode approval waypoint already
+> "partial" }]`; when it is finished, `status: "done"`. After plan-mode approval headway already
 > tracks the plan: don't pin its file or report a new list; send `updates` with the ids `state`
 > shows. Put the step's id in the description of any subagent you dispatch for it, as `step 3: ...`.
 > For a request that asks for one thing, call nothing. Do not describe this tracking in your reply.
 
 Cost, stated honestly in the README: about 150 words of system prompt per session on the session
 side of the cache boundary, and one tool call per step (two with the `partial` mark) when Claude
-follows it. The section is the only text waypoint adds to Claude's context, besides the one-line
+follows it. The section is the only text headway adds to Claude's context, besides the one-line
 router notes on dispatches (section 7) and the note a plan-mode approval carries (4.4). The handoff sentence is backed by the refusals of 4.4, so a
 Claude that ignores it still cannot hide the plan.
 
@@ -623,12 +623,12 @@ Warnings inform; they never deny or rewrite. `routerWarnings: false` turns every
 
 | Rule | Fires on | Condition | Default | Text |
 | :- | :- | :- | :- | :- |
-| R1 | `tool.call` Agent | `e.model` absent, `subagent_type` is not `fork`, and the type's definition names no model (below) | on | `waypoint: Agent "<description>" (<role>) names no model; pass model on every dispatch.` |
-| R2 | `tool.call` Workflow | an `agent(` call whose options lack `model:` or `effort:` and are not dynamic | on | `waypoint: Workflow "<meta.name>": <n> agent() call(s) without model or effort: <labels or ordinals>. Pass both on every call.` (cut near 600 characters with `+n more`) |
-| R3 | `tool.call` Agent with `e.model` or a definition `model:`; or the first `turn.step` when R1 fired | model family outside the role's `models` | off until a role file names the role | `waypoint: <role> "<description>" dispatched on <family>; the role table expects <set>.` |
+| R1 | `tool.call` Agent | `e.model` absent, `subagent_type` is not `fork`, and the type's definition names no model (below) | on | `headway: Agent "<description>" (<role>) names no model; pass model on every dispatch.` |
+| R2 | `tool.call` Workflow | an `agent(` call whose options lack `model:` or `effort:` and are not dynamic | on | `headway: Workflow "<meta.name>": <n> agent() call(s) without model or effort: <labels or ordinals>. Pass both on every call.` (cut near 600 characters with `+n more`) |
+| R3 | `tool.call` Agent with `e.model` or a definition `model:`; or the first `turn.step` when R1 fired | model family outside the role's `models` | off until a role file names the role | `headway: <role> "<description>" dispatched on <family>; the role table expects <set>.` |
 | R4 | first `turn.step` of a known role | effort outside the role's `efforts` | off until a role file names the role | row mark and log only |
 
-Role rules come from one optional file, `<configDir>/waypoint-roles.json` (the config directory is
+Role rules come from one optional file, `<configDir>/headway-roles.json` (the config directory is
 `$.env.get('CLAUDE_CONFIG_DIR')`, else `.claude` in the home directory, `$HOME` else `$USERPROFILE`). It is read at session start and
 re-read when its mtime moves (checked every fifth 2 s tick). Schema:
 
@@ -647,7 +647,7 @@ already, so R1 stays quiet for it. *Verified (2.1.296):* the resolved model cann
 `claude-sonnet-5-5`) and a project agent with no `model:` all resolved to `claude-sonnet-5-5` under
 an opus parent whose `parentModel` was `claude-opus-5-5`, while `model: inherit` resolved to the
 parent's and `model: haiku` to haiku. A no-model definition resolves to the engine's default, not
-the parent's, so comparing with `parentModel` is not a test. waypoint therefore reads the
+the parent's, so comparing with `parentModel` is not a test. headway therefore reads the
 definition: `<type>.md` (the last `:` segment, case kept) in `.claude/agents` of the session
 directory and each parent, then `<configDir>/agents`, and for a `plugin:type` name each
 `<configDir>/plugins/cache/<marketplace>/<plugin>/<version>/agents`; the first file found decides,
@@ -719,12 +719,12 @@ returns `contextHint`: `compact-now`, `compact-at-next-boundary`, or `null`.
 
 ### 9.1 Tool
 
-Registered at `session.start` as `waypoint` (full name `mcp__waypoint__waypoint`),
+Registered at `session.start` as `headway` (full name `mcp__headway__headway`),
 `isDeferred: false`. One tool with an `action` field.
 
 | `action` | Input | Reply |
 | :- | :- | :- |
-| `track` | `file` (required), `section?`, `doneRule?` (`column=<name>` / `check=<name>` / `auto`), `partial?`, `groupMap?`; for a plan *file* the user asked to track (a plan-mode plan is tracked automatically) | `tracking <file> § <section>: <counts> tasks, <groups> groups`, `already tracking this plan from plan mode; ...` (4.4), `refused: outside the project; ask the user to run /waypoint track <file>` (4.2), or `refused: <reason>` |
+| `track` | `file` (required), `section?`, `doneRule?` (`column=<name>` / `check=<name>` / `auto`), `partial?`, `groupMap?`; for a plan *file* the user asked to track (a plan-mode plan is tracked automatically) | `tracking <file> § <section>: <counts> tasks, <groups> groups`, `already tracking this plan from plan mode; ...` (4.4), `refused: outside the project; ask the user to run /headway track <file>` (4.2), or `refused: <reason>` |
 | `state` | `logEntries?` (default 10) | the block below |
 | `report` | `tasks?`, `title?`, `updates?`, `done?` (4.3, 4.4) | `reported <n> tasks` / `updated <n> tasks` / `refused: <reason>` |
 | `focus` | `taskId` | `current task: <id>` or `unknown task: <id>` |
@@ -734,7 +734,7 @@ Registered at `session.start` as `waypoint` (full name `mcp__waypoint__waypoint`
 context line equals band line 3. The block (the `agents` line lists every unfinished agent, then
 the 20 most recently finished, then `+n more`; the goal line names the source; under a plan-mode
 plan a `steps:` line after `current:` lists every step as `<id> <title, cut at 60> (<status>)`,
-joined by ` · `, since those ids are waypoint's own (4.4) and `report` updates must name them):
+joined by ` · `, since those ids are headway's own (4.4) and `report` updates must name them):
 
 ```
 goal: Add a --name flag to hello.py — 2/4 done (plan)
@@ -749,17 +749,17 @@ context: 71% ($12.34) — contextHint: compact-at-next-boundary
 
 ### 9.2 Command
 
-`$.command.register({ name: 'waypoint', argumentHint, immediate: true })`.
+`$.command.register({ name: 'headway', argumentHint, immediate: true })`.
 
 | Form | Does |
 | :- | :- |
-| `/waypoint` | opens the pane (or the expanded band when not placed); again closes it |
-| `/waypoint track <path> ["Section text"] [column=<name> \| check=<name> \| auto] [partial=<column>] [groups=<path>]` | pins; prints the same line as the tool |
-| `/waypoint plan` / `agents` / `log` / `usage` | opens the pane on that tab |
-| `/waypoint close` | closes the pane or the expanded band |
-| `/waypoint untrack` | unpins |
-| `/waypoint status` | prints the `state` block |
-| `/waypoint band off` / `band on` | hides or shows the band (store pref `band`, over `bandDefault`) |
+| `/headway` | opens the pane (or the expanded band when not placed); again closes it |
+| `/headway track <path> ["Section text"] [column=<name> \| check=<name> \| auto] [partial=<column>] [groups=<path>]` | pins; prints the same line as the tool |
+| `/headway plan` / `agents` / `log` / `usage` | opens the pane on that tab |
+| `/headway close` | closes the pane or the expanded band |
+| `/headway untrack` | unpins |
+| `/headway status` | prints the `state` block |
+| `/headway band off` / `band on` | hides or shows the band (store pref `band`, over `bandDefault`) |
 
 The command returns `{ text }` for `track`, `untrack`, `status` and refusals, `{}` otherwise.
 
@@ -769,7 +769,7 @@ and never presumes. Any other run (a message a model wrote, `peer-send-message` 
 `coordinator`, `channel` or `projects-relay` delivery; a `task-notification`; a `scheduled-trigger`;
 another plugin's `$.command.run`, `plugin`; `bridge`, `sdk`; a run with no stamp, `unclassified` or
 none) gets `refused: run this from the prompt` before anything is parsed, statted or written. The
-forms that only read or show, `/waypoint` alone, the tab names, `close` and `status`, answer from
+forms that only read or show, `/headway` alone, the tab names, `close` and `status`, answer from
 any origin.
 
 ## 10. UI
@@ -777,8 +777,8 @@ any origin.
 ### 10.1 Band above the prompt
 
 Hook: `on('ui.render', { component: ['AbovePrompt', 'Pane'] })`, one hook for both sites. A second
-`ui.render` hook, `{ component: ['ToolUse', 'ToolResult'], props: { tool: 'mcp__waypoint__waypoint' } }`,
-draws the transcript rows of waypoint's own tool (10.4); those two hooks are the only `ui.render`
+`ui.render` hook, `{ component: ['ToolUse', 'ToolResult'], props: { tool: 'mcp__headway__headway' } }`,
+draws the transcript rows of headway's own tool (10.4); those two hooks are the only `ui.render`
 registrations. Quiet
 rule: return `next(e)` untouched when `e.props.hasSurvey` is true, when the band is off
 (`bandDefault` or the store pref), or when no source has data and no agent is still at work.
@@ -786,11 +786,11 @@ Otherwise two or three lines; line 3 is dropped when `e.props.bodyColumns` is un
 at work and no source, line 1 reads `◆ no plan` in `muted`. Every `Text` uses
 `wrap: 'truncate-end'`; nothing wraps.
 
-Composition: waypoint draws `<Box column>{its lines}{await next(e)}</Box>`, so another mod's band
+Composition: headway draws `<Box column>{its lines}{await next(e)}</Box>`, so another mod's band
 (skins' meters) still shows. *Verified:* without a declared dependency the order between two
-installed bands follows load order, and skins' meters then draw above waypoint's lines; under
-`--plugin-dir` waypoint draws above. waypoint declares no dependency (skins must stay optional), so
-with skins installed its meters may sit above waypoint's lines. The README says so.
+installed bands follows load order, and skins' meters then draw above headway's lines; under
+`--plugin-dir` headway draws above. headway declares no dependency (skins must stay optional), so
+with skins installed its meters may sit above headway's lines. The README says so.
 
 Mock at 100 columns (`░` is the track, drawn as spaces on a `surface` background; the fill is `█`
 with one fractional cell from `▏▎▍▌▋▊▉`):
@@ -808,7 +808,12 @@ plan-mode list the words are `done` and `partial`. Widths: 1 space; glyph and sp
 12), then the label (minimum 12). Line 2 reads `no current task` in `muted` when nothing is
 dispatched; with no plan task at work it shows the run or `Agents` group with its own agents bar.
 The single partial task of a reported, plan-mode or task-tool source that no agent works reads
-`◐ in progress` in `run` in place of an agents count. Line 3's last slot shows the newest log entry or the compact hint.
+`◐ in progress` in `run` in place of an agents count. When every task of the active source is done and
+no agent is at work, line 2 reads `✓ all done` (ascii `+ all done`) in `ok` and no task is current,
+whether or not an agent finished a moment ago or the `focus` action named a task. A current task that is done
+(or a group whose tasks are all done) draws its bar in `ok`, never in `run`. On the Plan tab a group
+that counts agents (not the plan's own group) draws its bar in `ok` once its status is done; the plan's
+own group bar is `ok` for done tasks and `run` for partial ones already. Line 3's last slot shows the newest log entry or the compact hint.
 
 Expanded band: when `$.ui.panes()` reports the pane `isPlaced: false` (*verified:* only an unasked
 open below 110 columns, or 144 for an id never opened; a command-opened pane is placed at every
@@ -819,7 +824,7 @@ focus (Ctrl+X then Tab).
 
 ### 10.2 Pane
 
-`$.ui.open({ id: 'waypoint', title: 'Waypoint', focus: true, rows: 18, columns: 72 })`. No
+`$.ui.open({ id: 'headway', title: 'Headway', focus: true, rows: 18, columns: 72 })`. No
 `closeOnEscape`: Esc returns focus to the prompt and the pane stays. Hotkeys with the pane
 focused: `1`–`4` tabs; `e` expand all / collapse all; `h` hide done tasks; `r` re-read the plan;
 `q` close; Enter on a row with a chevron opens or closes it. `ui.close` for this id clears the open
@@ -867,11 +872,11 @@ read within one dispatch answers the dispatch's first moment, so agent reducers 
 unchanged reducer writes nothing and logs nothing. A main-loop `turn.step`'s usage write is
 skipped when percent and cost are unchanged.
 
-### 10.4 Transcript rows for waypoint's own tool
+### 10.4 Transcript rows for headway's own tool
 
 A `ui.render` hook of its own serves `ToolUse` and `ToolResult`, registered with a props matcher,
-`{ component: ['ToolUse', 'ToolResult'], props: { tool: 'mcp__waypoint__waypoint' } }` (*verified*
-2.1.296, A21: the engine runs it for that tool's rows only, so no other tool's row reaches waypoint), and
+`{ component: ['ToolUse', 'ToolResult'], props: { tool: 'mcp__headway__headway' } }` (*verified*
+2.1.296, A21: the engine runs it for that tool's rows only, so no other tool's row reaches headway), and
 not registered at all when `quietToolRows` is false. It does not call `next`:
 `ToolUse` returns one line (`hooks/quiet.tsx`, from `input` and the stored `output`, which is the
 reply text), `ToolResult` returns an empty `Box`. Any other tool, or `quietToolRows: false`, keeps
@@ -880,25 +885,25 @@ in:
 
 | Call | Line |
 | :- | :- |
-| `report` with `tasks` | `◆ waypoint · 3 steps: <title> · <title> · <title>` (each title cut at 48 cells; the line truncates at the end) |
+| `report` with `tasks` | `◆ headway · 3 steps: <title> · <title> · <title>` (each title cut at 48 cells; the line truncates at the end) |
 | `report` with `updates`/`done` | `<glyph> step <id>` per entry joined by `·`: `✓ step 1 · ◐ step 2`; the glyph is `✓` done, `◐` partial, `○` open |
 | `track` | `◆ tracking <file> § <section>` |
-| `state` / `focus` / `untrack` | `◆ waypoint state` / `▸ focus <taskId>` / `◆ untracked` |
-| reply `refused: ...` or `isErrored` | `✕ waypoint · <reply text>` in the `failed` colour (the whole line) |
-| reply `unknown task: <id>` (focus) | `⚠ waypoint · unknown task: <id>` in `warning` |
+| `state` / `focus` / `untrack` | `◆ headway state` / `▸ focus <taskId>` / `◆ untracked` |
+| reply `refused: ...` or `isErrored` | `✕ headway · <reply text>` in the `failed` colour (the whole line) |
+| reply `unknown task: <id>` (focus) | `⚠ headway · unknown task: <id>` in `warning` |
 | reply `...; unknown task: <ids>` (updates) | the normal line, then `  ⚠ unknown task: <ids>` in `warning` |
 
 Text is `counts` (muted); status glyphs use `doneGlyph`, `partial`, `queued`. Glyphs and separator
-come from the `GLYPHS` table, so ascii mode gives `* waypoint - 3 steps: ...` and `+ step 1 - / step 2`.
+come from the `GLYPHS` table, so ascii mode gives `* headway - 3 steps: ...` and `+ step 1 - / step 2`.
 
 *Verified (2.1.296):* chaining with the skins mod. skins registers its own `ui.render` hooks for
-`ToolUse` and `ToolResult` that draw every `mcp__*` tool as its own row (`waypoint:waypoint  report`)
-without calling `next`, so whichever mod's hook is outermost wins. With `--plugin-dir <waypoint>
---plugin-dir <skins>` (waypoint first) and with skins installed and waypoint under `--plugin-dir`,
-waypoint's line drew and skins drew every other tool; with `--plugin-dir <skins> --plugin-dir
-<waypoint>` skins drew waypoint's calls and no quiet line appeared. Two marketplace installs load in
-skins-first order (Appendix A7), so there waypoint loses; the README says so. Skins disabled:
-waypoint's line draws and no other row changes.
+`ToolUse` and `ToolResult` that draw every `mcp__*` tool as its own row (`headway:headway  report`)
+without calling `next`, so whichever mod's hook is outermost wins. With `--plugin-dir <headway>
+--plugin-dir <skins>` (headway first) and with skins installed and headway under `--plugin-dir`,
+headway's line drew and skins drew every other tool; with `--plugin-dir <skins> --plugin-dir
+<headway>` skins drew headway's calls and no quiet line appeared. Two marketplace installs load in
+skins-first order (Appendix A7), so there headway loses; the README says so. Skins disabled:
+headway's line draws and no other row changes.
 
 ### 10.5 Text a model wrote
 
@@ -946,14 +951,14 @@ scan per `palette:` and `light:` block (a `key: {` at the start of a line, to th
 pattern per slot line, never evaluated. A missing store means skins' defaults
 (`noir`, `unicode`); `prefs.skin === 'off'` or an unreadable theme file means plain, with one toast
 per session naming the reason. The store and theme files are stat-polled every fifth 2 s tick so
-`/skin <name>` recolours waypoint live.
+`/skin <name>` recolours headway live.
 
 Light or dark: `SKINS_THEME` env (`light`/`dark`); else the `theme` row of `$.config.list()` (a
 name containing `light` is light, `dark` is dark); else `COLORFGBG` (a last field of 7 or 15 is
 light); else dark. 0.1.2 also ran `defaults read -g AppleInterfaceStyle` on macOS for the `auto`
-case; 0.2 drops it so that waypoint runs no subprocess. Cost of that choice: with Claude Code's
+case; 0.2 drops it so that headway runs no subprocess. Cost of that choice: with Claude Code's
 theme on `auto`, no `COLORFGBG`, and skins enabled on a light macOS appearance, skins' meters draw
-light while waypoint's lines draw dark; the fix is an explicit Claude Code theme or
+light while headway's lines draw dark; the fix is an explicit Claude Code theme or
 `SKINS_THEME=light`, and the README says so. Light palette: the skin's `light` block when present,
 else skins' derivation (`fg #1f1f1f`, `muted #6b6b6b`, `surface #ffffff`, `zebra #f2f2f2`, kinds
 scaled toward black).
@@ -978,7 +983,7 @@ No emoji; every glyph is one cell.
 | :- | :- | :- |
 | `$.state` atoms (`filter`, `report`, `plan` (0.2), `tasks` (0.2), `label` (0.2), `prompt` (0.2), `focus`, `goal`, `theme`, `agents`, `log`, `ui`, `usage`) | everything drawn | the session; survives `/compact` and a module reload |
 | `$.store` key `session:<id>` | `{ filter, report, plan, tasks, label, prompt, agents, log, savedAt }` | across `/resume`, `/branch` and a restart; across `/clear`, only `filter` and `agents` (and a plan the dialog's "clear context" approved, below) |
-| `$.store` key `band` | the `/waypoint band` pref | the config directory |
+| `$.store` key `band` | the `/headway band` pref | the config directory |
 
 Saves are debounced to one write per second, keyed by `await $.session.id()`, and skipped when the
 record equals the last one written (compared without `savedAt`). A record is capped at 300 agents
@@ -1021,25 +1026,25 @@ label and shows nothing beside a number, also for a control plugin whose only nu
 | `guideClaude` | boolean | true | add the guidance section (section 6) to the system prompt, read at the session's first model turn, and the note of a plan-mode approval (4.4) |
 | `routerWarnings` | boolean | true | run the router rules (section 7) |
 | `theme` | `auto` \| `skins` \| `plain` | `auto` | colour source (section 11) |
-| `quietToolRows` | boolean | true | draw waypoint's own tool calls as one dim transcript line each (section 10.4) |
-| `bandDefault` | `on` \| `off` | `on` | whether the band shows before `/waypoint band` has been run |
+| `quietToolRows` | boolean | true | draw headway's own tool calls as one dim transcript line each (section 10.4) |
+| `bandDefault` | `on` \| `off` | `on` | whether the band shows before `/headway band` has been run |
 
 Values arrive in `register(on, options)`.
 
 ## 14. Trust
 
-What waypoint does with your machine, in full:
+What headway does with your machine, in full:
 
 - **Network:** none. No fetch, no telemetry, no update check.
 - **Reads:** the plan file and group map you pin (any path), or that Claude pins through the tool's
   `track` action (only inside the project: the path must land, every link followed, under the real
   path of the session directory, with no exception; a file under `<configDir>/plans` is never read
-  for Claude, 4.4), since what waypoint reads flows back to Claude through `state`, outside Claude
+  for Claude, 4.4), since what headway reads flows back to Claude through `state`, outside Claude
   Code's permissions; such a pin keeps its bound, and every read of it, at the pin and on each poll,
   stats the path with links followed, checks the real path against the bound and reads that real
-  path, so a link swapped after the check is not followed (4.2); `<configDir>/waypoint-roles.json`
+  path, so a link swapped after the check is not followed (4.2); `<configDir>/headway-roles.json`
   if you create it; the Workflow script file by path (`scriptPath`, which the tool prefers to an
-  inline `script`, so waypoint reads the text that runs), only when it lands inside the project or
+  inline `script`, so headway reads the text that runs), only when it lands inside the project or
   the config directory, and then the real path checked is what is read, else the inline `script` is
   parsed and no file is read;
   agent definition files by type name, for R1 and R3 (`.claude/agents` from the session directory
@@ -1076,11 +1081,11 @@ What waypoint does with your machine, in full:
 - **Subprocesses:** none (section 11).
 - **What Claude sees:** the guidance section (section 6) when `guideClaude` is on and no file is
   pinned at the session's first turn; the note of a plan-mode approval (4.4) when `guideClaude` is on;
-  a one-line note after a dispatch that trips a router rule; the replies of the `waypoint`
+  a one-line note after a dispatch that trips a router rule; the replies of the `headway`
   tool when Claude calls it. Nothing else.
-- **What Claude can do through the tool:** pin a file for waypoint to read (`track`) inside the
+- **What Claude can do through the tool:** pin a file for headway to read (`track`) inside the
   project, give a task list, move statuses, set the focus, unpin. Claude can pin a file only inside
-  the project; you can pin any file with `/waypoint track`. A `/waypoint track`, `untrack` or
+  the project; you can pin any file with `/headway track`. A `/headway track`, `untrack` or
   `band on|off` that you did not type at the prompt (one in a message a model wrote, a relay, a
   notification, another plugin's run, a scheduled prompt) is refused (9.2); `status` and the pane
   answer from anywhere. Nothing it sends is written to a file.
@@ -1090,7 +1095,7 @@ What waypoint does with your machine, in full:
   supplies reaches a terminal unsanitised: router warnings clean every value they quote (the role,
   the model family, the effort, the description, the role file's names).
 - **What it never does:** deny or rewrite a tool call; retry or schedule an agent. Before an Agent
-  or Workflow call goes on, waypoint's hook may read one capped file (an agent definition of at most
+  or Workflow call goes on, headway's hook may read one capped file (an agent definition of at most
   64 KiB, a Workflow script of at most 256 KiB); it then passes the call on unchanged, and a fault in
   the hook lets the call through. A router warning (R1 to R3 on an Agent call, R2 on a Workflow call)
   is logged, toasted and added to context only after the call has gone on and only when it was not
@@ -1114,7 +1119,7 @@ hooks/theme.ts       store and theme-file parsing, slots, glyphs, light derivati
 hooks/format.ts      bars, durations, money, truncation, the text sanitiser, size caps (pure)
 hooks/display.ts     rows and cells shared by pane, band and `state` (pure)
 hooks/band.tsx  hooks/pane.tsx  trees from plain data (pure)
-hooks/quiet.tsx      the transcript line of waypoint's own tool, from plain data (pure)
+hooks/quiet.tsx      the transcript line of headway's own tool, from plain data (pure)
 hooks/pin.ts  hooks/tool.ts  hooks/persist.ts   filter parsing, tool spec and state block, store record (pure)
 ```
 
@@ -1123,8 +1128,8 @@ Engine rules the code must obey:
 - **One hook per event and matcher.** The static analyser reads each `on('<literal>', matcher)`; a
   second registration for the same event and matcher in one module is refused. `ui.render` has one
   hook for the band and the pane (`component: ['AbovePrompt', 'Pane']`) and one for the transcript rows
-  of waypoint's own tool (`component: ['ToolUse', 'ToolResult']`, `props: { tool }`); `tool.call` for
-  Agent, Workflow, `ExitPlanMode`, the task tools and the waypoint tool are distinct `{ tool }`
+  of headway's own tool (`component: ['ToolUse', 'ToolResult']`, `props: { tool }`); `tool.call` for
+  Agent, Workflow, `ExitPlanMode`, the task tools and the headway tool are distinct `{ tool }`
   matchers on the same event.
 - **`$` stays in `register.tsx`.** `$` may be passed only to top-level functions in the same file,
   never to imported ones; the pure modules take plain data. No `require`, no dynamic `import()`,
@@ -1173,7 +1178,7 @@ in this repository.
 | A4 | hex colours draw in `Text color` in band and pane | `#ff8f40` captured as a 256-colour escape |
 | A5 | `$.fs.read` of a 1.2 MB plan file; `$.fs.list`/`read` of the plugins store directory | direct calls |
 | A6 | `$.plugin.root` of a marketplace install is the install location; `CLAUDE_CONFIG_DIR` is set when the CLI was started with it, else unset with `HOME` set | logged on two config dirs |
-| A7 | band composition: both bands show; installed without `dependencies` skins' meters sit above waypoint's; `maxRows` 16 in fullscreen at 45 rows, terminal rows in classic; `bodyColumns` = columns − 5 | captures at 60, 80, 140 columns |
+| A7 | band composition: both bands show; installed without `dependencies` skins' meters sit above headway's; `maxRows` 16 in fullscreen at 45 rows, terminal rows in classic; `bodyColumns` = columns − 5 | captures at 60, 80, 140 columns |
 | A8 | two sessions writing `session:<id>` every second for a minute do not clobber each other | a third session read both keys |
 | A9 | `/compact` keeps id and `$.state`; `/clear` new id, state reset; in-session `/resume` resets state and `$.session.id()` lags inside `classic.SessionStart` | logged around each command |
 | A10 | a command-opened pane is placed at every width; `isPlaced: false` only from an unasked open below 110 columns (144 for a new id) | opens from a command and from a timer |
@@ -1181,16 +1186,16 @@ in this repository.
 | A12 | task tools absent by default on current models; present under the engine's opt-in; payload shapes of 4.5; task files under `<configDir>/tasks/<session_id>/` survive `claude --resume`; `TodoWrite` writes no file; subagents have no task tools | sessions with and without the opt-in, files listed at resume |
 | A13 | `ExitPlanMode` `tool.call` carries `e.plan` and `e.planFilePath`; approval `result: { plan, isAgent, filePath }`; rejection `isError: true`; the plan file is overwritten per approval | plan mode approved, rejected, re-entered |
 | A14 | `prompt.submit` `e.text` and `e.origin.kind` (`composer`, `task-notification`); paste wrapped in `<pasted_content>`; slash commands run as `/name args` text or not at all | typed, pasted, slash and notification prompts |
-| A15 | without `dependencies` waypoint loads with skins disabled and keeps the skin palette from skins' files on disk | `enabledPlugins` `skins@...: false` |
+| A15 | without `dependencies` headway loads with skins disabled and keeps the skin palette from skins' files on disk | `enabledPlugins` `skins@...: false` |
 | A16 | the three plan-mode shapes of 4.4 | three real plans written by Claude in plan mode |
 | A17 | B2: a `prompt.compose` section appended as `session` is read by Claude word for word and changes what it does, with a wording that defines a step by what is asked, not by tool calls. The spec's first wording ("When a request takes several steps ... For a request that is one step, call nothing") failed: asked to create three files and list them, Claude made one command and did not call `report`, saying it took one command and the text says call nothing for one step. The second wording (first revision: a step is a thing asked, "however few commands they take") made Claude call `report` in 4 of 4 runs but send a `partial` mark in 1 of 4 (it batched one `done` update). The third wording (6, adds "Mark each step as you go ... before you start a step") gave `report`, `partial`, `partial`/`done`, `done` in 3 of 3 runs, band line 1 `done 0 · partial 1 · open 1 / 2` then `2/2 done`, line 2 the partial step; `what is 2+2?` called nothing (also under the second wording); `guideClaude: false` called nothing. The prompt is composed once, at the first model turn (6) | live sessions in tmux, `--plugin-dir`, the debug log showing `prompt.compose` per turn, and Claude asked to quote its system prompt |
-| A18 | a `--plugin-dir` plugin is `waypoint@inline`; its options come from `pluginConfigs["waypoint@inline"].options` in `--settings` | the debug log line naming the key; `guideClaude: false` read as off |
+| A18 | a `--plugin-dir` plugin is `headway@inline`; its options come from `pluginConfigs["headway@inline"].options` in `--settings` | the debug log line naming the key; `guideClaude: false` read as off |
 | A19 | Claude passes a goal `title` of six words or fewer with the report list under the wording that adds "a goal `title` of at most 6 words" (2 of 2 live runs: "Create and read back two files", "Write haiku files and list folder"); the quiet rows draw live; the chaining result of 10.4 | two tmux sessions on haiku, then the same prompt with skins loaded in each order |
-| A20 | R1 and typed agents: `agent.spawn` `next(e)` resolves a no-model definition to `claude-sonnet-5-5`, not the parent's (`claude-opus-5-5`); `model: inherit` to the parent's; so the resolved model cannot say whether a definition set one. Live with the definition read (section 7): `general-purpose` and a project agent with no `model:` fired R1; the user's `implementer` (model in its frontmatter) and a project agent with `model: haiku` did not | a probe mod logging `agent.spawn` before and after `next`, then the build, `/waypoint status` log |
-| A21 | batch B, live (2.1.296, haiku, scratch directory): a `ui.render` hook with `props: { tool }` runs for that tool's rows only (waypoint's quiet lines drew, Write and Agent rows stayed stock); a reported list of 3 done steps draws its Plan tab group expanded with a full `████` bar in the done colour and `3/3 tasks`; the Usage tab reads `<$0.01 exact` and `no agents`; an Agent call with `subagent_type: "../../etc/x"` fired R1 although files defining `model: haiku` stood at both paths the traversal would reach (`<cwd>/etc/x.md`, `/tmp/etc/x.md`), while a project agent `okagent` with `model: haiku` fired none | tmux session on `--plugin-dir`, the Plan, Usage and Log tabs captured, canary files removed after |
-| A22 | the plan-mode handoff (4.4, 6), live on 2.1.296 with Opus 5.5 (account default model), `--permission-mode plan`, a scratch directory, the guidance with the handoff sentence: run 1, a four-step plan, approved with auto mode: Claude sent only `report` `updates` with ids `1`-`4` (partial then done per step), no `track`, no second list, and the band read `4/4 done  plan`; run 2, a plan in two phases with numbering restarting (ids `1.1`, `1.2`, `2.1`, `2.2`): Claude called `state` first, then sent `updates` with `1.1` to `2.2`, again no `track` and no list, `4/4 done  plan`. The refusals of 4.4 did not fire in either run (the tests cover them) | two tmux sessions on `--plugin-dir`, the session transcripts read for every `waypoint` call and its reply, then deleted |
+| A20 | R1 and typed agents: `agent.spawn` `next(e)` resolves a no-model definition to `claude-sonnet-5-5`, not the parent's (`claude-opus-5-5`); `model: inherit` to the parent's; so the resolved model cannot say whether a definition set one. Live with the definition read (section 7): `general-purpose` and a project agent with no `model:` fired R1; the user's `implementer` (model in its frontmatter) and a project agent with `model: haiku` did not | a probe mod logging `agent.spawn` before and after `next`, then the build, `/headway status` log |
+| A21 | batch B, live (2.1.296, haiku, scratch directory): a `ui.render` hook with `props: { tool }` runs for that tool's rows only (headway's quiet lines drew, Write and Agent rows stayed stock); a reported list of 3 done steps draws its Plan tab group expanded with a full `████` bar in the done colour and `3/3 tasks`; the Usage tab reads `<$0.01 exact` and `no agents`; an Agent call with `subagent_type: "../../etc/x"` fired R1 although files defining `model: haiku` stood at both paths the traversal would reach (`<cwd>/etc/x.md`, `/tmp/etc/x.md`), while a project agent `okagent` with `model: haiku` fired none | tmux session on `--plugin-dir`, the Plan, Usage and Log tabs captured, canary files removed after |
+| A22 | the plan-mode handoff (4.4, 6), live on 2.1.296 with Opus 5.5 (account default model), `--permission-mode plan`, a scratch directory, the guidance with the handoff sentence: run 1, a four-step plan, approved with auto mode: Claude sent only `report` `updates` with ids `1`-`4` (partial then done per step), no `track`, no second list, and the band read `4/4 done  plan`; run 2, a plan in two phases with numbering restarting (ids `1.1`, `1.2`, `2.1`, `2.2`): Claude called `state` first, then sent `updates` with `1.1` to `2.2`, again no `track` and no list, `4/4 done  plan`. The refusals of 4.4 did not fire in either run (the tests cover them) | two tmux sessions on `--plugin-dir`, the session transcripts read for every `headway` call and its reply, then deleted |
 | A23 | the plan dialog's "Yes, clear context" (shown with `showClearContextOnPlanAccept: true`): `ExitPlanMode` resolves `isError: true` with the stock rejection text, `classic.SessionStart` `clear` follows 16 ms later, the old turn's `turn.complete` after the clear has begun, then the new conversation's `turn.start` with "Implement the following plan: ..." and no `prompt.submit`; a typed `/clear` raises no `prompt.submit` either; after the fix the plan crossed the clear and Claude sent only `updates` | tmux on `--plugin-dir`, a probe line in the hooks and the debug log, then the session transcript |
-| A24 | the approval note (4.4), live on 2.1.296 in plan mode (`/plan`, a scratch directory, a three-step plan with Context, Steps and Verification), once on Haiku and once on Sonnet. Without the note neither sent a `report` update on this plan. With it the session transcript showed the note in the approval's result and both models sent `updates` (`partial` then `done` per step); the band read `3/3 done  plan`. `/plugin configure` shows no value beside a number option, also for a control plugin with `{ type: "number", default: 10 }` (13) | two tmux sessions on `--plugin-dir`, the transcripts read for every `waypoint` call and the note, then deleted |
+| A24 | the approval note (4.4), live on 2.1.296 in plan mode (`/plan`, a scratch directory, a three-step plan with Context, Steps and Verification), once on Haiku and once on Sonnet. Without the note neither sent a `report` update on this plan. With it the session transcript showed the note in the approval's result and both models sent `updates` (`partial` then `done` per step); the band read `3/3 done  plan`. `/plugin configure` shows no value beside a number option, also for a control plugin with `{ type: "number", default: 10 }` (13) | two tmux sessions on `--plugin-dir`, the transcripts read for every `headway` call and the note, then deleted |
 
 ## Appendix B. Probes
 

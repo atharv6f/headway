@@ -1,11 +1,11 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 // The Workflow tool.call hook's side of a run's planned calls: a call with no run id runs nothing
-// waypoint can join, and a script whose agentIndex order is not its source order marks its calls.
+// headway can join, and a script whose agentIndex order is not its source order marks its calls.
 function watch(on) {
   const last: Record<string, unknown> = {}
   on('state.set', async ($, e, next) => {
-    if (e.plugin === 'waypoint') last[e.key] = e.value
+    if (e.plugin === 'headway') last[e.key] = e.value
     return next(e)
   })
   on('ui.toast', async () => ({ value: {} }))

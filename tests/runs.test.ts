@@ -193,7 +193,7 @@ return [a, b]`
 function watch(on) {
   const last: Record<string, unknown> = {}
   on('state.set', async ($, e, next) => {
-    if (e.plugin === 'waypoint') last[e.key] = e.value
+    if (e.plugin === 'headway') last[e.key] = e.value
     return next(e)
   })
   on('ui.toast', async () => ({ value: {} }))

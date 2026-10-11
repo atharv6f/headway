@@ -18,7 +18,7 @@ const stateLines = async ($) => (await tool($, { action: 'state' })).split('\n')
 const goalLine = async ($) => (await stateLines($))[0]
 
 async function bandLines($): Promise<string[]> {
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   const out: string[] = []
   for (const re of [/◆/, /▸/]) out.push(((await ui.find({ type: 'Text', text: re }))?.text as string | undefined) ?? '')
   await ui.unmount()
@@ -166,13 +166,13 @@ function base(on) {
   on('prompt.compose', () => ({ sections: [{ id: 'base', text: 'You are Claude.', scope: 'shared' as const }] }))
 }
 
-test('guide: waypoint:guide is appended after the engine sections as session scope, with the spec text', async ($, on) => {
+test('guide: headway:guide is appended after the engine sections as session scope, with the spec text', async ($, on) => {
   world(on, { files: FILES })
   base(on)
   await start($)
   const sections = (await compose($)).sections
   expect(sections.map((s) => s.id)).toEqual(['base', GUIDE_ID])
-  expect(sections[1]).toEqual({ id: 'waypoint:guide', text: GUIDE_TEXT, scope: 'session' })
+  expect(sections[1]).toEqual({ id: 'headway:guide', text: GUIDE_TEXT, scope: 'session' })
   expect(GUIDE_TEXT).toContain('action: "report"')
   expect(GUIDE_TEXT).toContain('status: "done"')
   // the report list carries a short goal title (6 words at most), and the section stays near its word budget
@@ -194,21 +194,21 @@ test('guide: left out for a session that draws nowhere (no surface, bare, print)
   expect(await ids($, { surfaces: [] })).toEqual(['base'])
   expect(await ids($, { traits: ['bare'] })).toEqual(['base'])
   expect(await ids($, { traits: ['print'] })).toEqual(['base'])
-  expect(await ids($)).toEqual(['base', 'waypoint:guide'])
+  expect(await ids($)).toEqual(['base', 'headway:guide'])
 })
 
 test('guide: a pinned file withdraws it on the next compose; untrack brings it back', async ($, on) => {
   world(on, { files: FILES })
   base(on)
   await start($)
-  expect(await ids($)).toEqual(['base', 'waypoint:guide'])
+  expect(await ids($)).toEqual(['base', 'headway:guide'])
   await tool($, { action: 'track', file: 'plan/p.md', section: 'Work', doneRule: 'column=landed' })
   expect(await ids($)).toEqual(['base'])
   await tool($, { action: 'untrack' })
-  expect(await ids($)).toEqual(['base', 'waypoint:guide'])
+  expect(await ids($)).toEqual(['base', 'headway:guide'])
 })
 
-test('guide: only for a request that offers the waypoint tool', async ($, on) => {
+test('guide: only for a request that offers the headway tool', async ($, on) => {
   world(on, { files: FILES })
   base(on)
   await start($)
@@ -216,7 +216,7 @@ test('guide: only for a request that offers the waypoint tool', async ($, on) =>
   expect(await ids($, { tools: [] })).toEqual(['base'])
   // ToolSearch alone is not the tool: a deferred tool is named in e.tools all the same
   expect(await ids($, { tools: ['Bash', 'ToolSearch'] })).toEqual(['base'])
-  expect(await ids($, { tools: [TOOL] })).toEqual(['base', 'waypoint:guide'])
+  expect(await ids($, { tools: [TOOL] })).toEqual(['base', 'headway:guide'])
 })
 
 test('guide: only for the main loop: a teammate or an analysis render leaves it out; the lean body (the main loop on some models) keeps it', async ($, on) => {
@@ -224,5 +224,5 @@ test('guide: only for the main loop: a teammate or an analysis render leaves it 
   base(on)
   await start($)
   for (const trait of ['teammate', 'analysis']) expect(await ids($, { traits: [trait] })).toEqual(['base'])
-  expect(await ids($, { traits: ['lean', 'skills'] })).toEqual(['base', 'waypoint:guide'])
+  expect(await ids($, { traits: ['lean', 'skills'] })).toEqual(['base', 'headway:guide'])
 })

@@ -6,10 +6,10 @@ export type Rule = 'R1' | 'R2' | 'R3' | 'R4'
 
 export interface Warning {
   rule: Rule
-  text: string // one line, "waypoint: ..."
+  text: string // one line, "headway: ..."
 }
 
-// Role rules (R3, R4) read a table the user writes in `<configDir>/waypoint-roles.json`; the code holds
+// Role rules (R3, R4) read a table the user writes in `<configDir>/headway-roles.json`; the code holds
 // none. A role the table does not name is not judged.
 export interface RoleRow {
   models: string[]
@@ -87,7 +87,7 @@ export function ruleR1(i: CallInput): Warning | undefined {
   if (i.model || role === 'fork' || i.definedModel) return undefined
   return {
     rule: 'R1',
-    text: 'waypoint: Agent "' + clean(i.description) + '" (' + (clean(role) || 'general-purpose') + ') names no model; pass model on every dispatch.',
+    text: 'headway: Agent "' + clean(i.description) + '" (' + (clean(role) || 'general-purpose') + ') names no model; pass model on every dispatch.',
   }
 }
 
@@ -187,7 +187,7 @@ export function ruleR3(i: CallInput, roles?: Roles): Warning | undefined {
   if (!row || !model || family === 'unknown' || row.models.indexOf(family) >= 0) return undefined
   return {
     rule: 'R3',
-    text: 'waypoint: ' + clean(roleOf(i.subagentType)) + ' "' + clean(i.description) + '" dispatched on ' + clean(family) + '; the role table expects ' + listOf(row.models) + '.',
+    text: 'headway: ' + clean(roleOf(i.subagentType)) + ' "' + clean(i.description) + '" dispatched on ' + clean(family) + '; the role table expects ' + listOf(row.models) + '.',
   }
 }
 
@@ -200,7 +200,7 @@ export function ruleR4(i: { description: string; subagentType?: string; effort?:
   if (row.efforts.indexOf(effort) >= 0) return undefined
   return {
     rule: 'R4',
-    text: 'waypoint: ' + clean(role) + ' "' + clean(i.description) + '" ran at effort ' + clean(effort) + '; the role table expects ' + listOf(row.efforts) + '.',
+    text: 'headway: ' + clean(role) + ' "' + clean(i.description) + '" ran at effort ' + clean(effort) + '; the role table expects ' + listOf(row.efforts) + '.',
   }
 }
 
@@ -222,7 +222,7 @@ function callName(c: CallShape): string {
 }
 
 function r2Text(workflow: string | undefined, count: number, names: string[]): string {
-  const head = 'waypoint: Workflow "' + (workflow === undefined ? '(unnamed)' : clean(workflow, NAME_MAX)) + '": ' + count + ' agent() call(s) without model or effort: '
+  const head = 'headway: Workflow "' + (workflow === undefined ? '(unnamed)' : clean(workflow, NAME_MAX)) + '": ' + count + ' agent() call(s) without model or effort: '
   const tail = '. Pass both on every call.'
   let shown = names.length
   const text = () => head + names.slice(0, shown).join(', ') + (shown < names.length ? ', +' + (names.length - shown) + ' more' : '') + tail
@@ -253,7 +253,7 @@ export function warningString(w: Warning): string {
   return w.rule + ' ' + w.text
 }
 
-// "waypoint: " is dropped for the log and the pane, which already say what they are.
+// "headway: " is dropped for the log and the pane, which already say what they are.
 export function warningDetail(w: Warning): string {
-  return w.text.replace(/^waypoint: /, '')
+  return w.text.replace(/^headway: /, '')
 }

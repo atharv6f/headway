@@ -48,7 +48,7 @@ test('theme auto: skins disabled draws plain, though its files are on disk', asy
 })
 
 test('theme auto: skins not installed (no key), or settings unreadable, draws plain without a toast', async ($, on) => {
-  const w = open(on, { files: skinsFiles(), enabledPlugins: { 'waypoint@example-mods': true } })
+  const w = open(on, { files: skinsFiles(), enabledPlugins: { 'headway@example-mods': true } })
   await start($)
   expect(themeOf(w).name).toBe('plain')
   w.enabledPlugins = 'throws'
@@ -136,7 +136,7 @@ test('light or dark: auto with no COLORFGBG and no row is dark', async ($, on) =
 
 // ---------------------------------------------------------------- the role file and the router
 
-const ROLE_FILE = CFG + '/waypoint-roles.json'
+const ROLE_FILE = CFG + '/headway-roles.json'
 const ROLES = JSON.stringify({ roles: { scout: { models: ['sonnet'], efforts: ['high'] }, reviewer: { models: ['opus'], efforts: ['high'] } } })
 
 function beneathAgents(on, ids: string[]) {
@@ -158,7 +158,7 @@ test('roles: no file means R1 and R2 only; a scout on opus is not judged', async
   await start($)
   expect((await agentCall($, { subagent_type: 'scout', model: 'opus' })).context).toBe(undefined)
   const r1 = await agentCall($, { subagent_type: 'scout' })
-  expect(r1.context).toEqual(['waypoint: Agent "sweep" (scout) names no model; pass model on every dispatch.'])
+  expect(r1.context).toEqual(['headway: Agent "sweep" (scout) names no model; pass model on every dispatch.'])
   expect(w.toasts.length).toBe(1)
 })
 
@@ -175,7 +175,7 @@ test('R1: a typed agent whose definition names a model draws no note; general-pu
   expect(typed.context).toBe(undefined)
   expect(w.toasts).toEqual([])
   const plain = await agentCall($, { subagent_type: 'general-purpose' })
-  expect(plain.context).toEqual(['waypoint: Agent "sweep" (general-purpose) names no model; pass model on every dispatch.'])
+  expect(plain.context).toEqual(['headway: Agent "sweep" (general-purpose) names no model; pass model on every dispatch.'])
   expect(w.toasts.length).toBe(1)
 })
 
@@ -376,7 +376,7 @@ test('R1 lookup: a definition over 64 KiB is not read; R1 fires and one debug li
   const before = w.touched.length
   expect(await noteOf($, 'big')).toContain(NO_MODEL)
   expect(w.touched.slice(before).filter((p) => p === '/w/.claude/agents/big.md').length).toBe(1) // statted, once
-  expect(logs.filter((l) => l.includes('big.md'))).toEqual(['waypoint: definition /w/.claude/agents/big.md not read: ' + (64 * 1024 + defn('haiku').length) + ' bytes is over 65536'])
+  expect(logs.filter((l) => l.includes('big.md'))).toEqual(['headway: definition /w/.claude/agents/big.md not read: ' + (64 * 1024 + defn('haiku').length) + ' bytes is over 65536'])
   expect(await noteOf($, 'edge')).toBe(undefined) // exactly 64 KiB is read
 })
 
@@ -422,7 +422,7 @@ test('R3 for a typed agent: the model its definition names is judged against the
   beneathAgents(on, [])
   await start($)
   const scout = await agentCall($, { subagent_type: 'scout' })
-  expect(scout.context).toEqual(['waypoint: scout "sweep" dispatched on opus; the role table expects sonnet.']) // no R1: the definition names a model
+  expect(scout.context).toEqual(['headway: scout "sweep" dispatched on opus; the role table expects sonnet.']) // no R1: the definition names a model
   expect((await agentCall($, { subagent_type: 'reviewer' })).context).toBe(undefined) // opus is what the table expects
   expect(w.toasts.length).toBe(1)
   // a call that names its own model is judged by that one, not the definition's
@@ -457,8 +457,8 @@ test('roles: a file makes R3 fire for the roles it names, and only those', async
   const w = open(on, { files: { [ROLE_FILE]: ROLES } })
   beneathAgents(on, [])
   await start($)
-  expect((await agentCall($, { subagent_type: 'acme:scout', model: 'opus' })).context).toEqual(['waypoint: scout "sweep" dispatched on opus; the role table expects sonnet.'])
-  expect((await agentCall($, { subagent_type: 'reviewer', model: 'haiku' })).context).toEqual(['waypoint: reviewer "sweep" dispatched on haiku; the role table expects opus.'])
+  expect((await agentCall($, { subagent_type: 'acme:scout', model: 'opus' })).context).toEqual(['headway: scout "sweep" dispatched on opus; the role table expects sonnet.'])
+  expect((await agentCall($, { subagent_type: 'reviewer', model: 'haiku' })).context).toEqual(['headway: reviewer "sweep" dispatched on haiku; the role table expects opus.'])
   expect((await agentCall($, { subagent_type: 'scout', model: 'sonnet' })).context).toBe(undefined)
   expect((await agentCall($, { subagent_type: 'hand', model: 'opus' })).context).toBe(undefined) // not named
   expect((await agentCall($, { subagent_type: 'scout', model: 'inherit' })).context).toBe(undefined) // unknown family
@@ -493,14 +493,14 @@ test('roles: a file that does not parse turns R3/R4 off, logs one line and toast
   await start($)
   expect((await agentCall($, { subagent_type: 'scout', model: 'opus' })).context).toBe(undefined)
   expect((await agentCall($, { subagent_type: 'scout' })).context?.[0]).toContain('names no model') // R1 still on
-  expect(logs.filter((l) => l.includes('waypoint-roles.json')).length).toBe(1)
-  expect(w.toasts.filter((t) => t.includes('waypoint-roles.json')).length).toBe(1)
+  expect(logs.filter((l) => l.includes('headway-roles.json')).length).toBe(1)
+  expect(w.toasts.filter((t) => t.includes('headway-roles.json')).length).toBe(1)
   // a second bad read in the same session logs again but does not toast again
   w.files[ROLE_FILE] = 'not json'
   w.mtimes[ROLE_FILE] = 2
   await w.clock.advance(10_000)
-  expect(logs.filter((l) => l.includes('waypoint-roles.json')).length).toBe(2)
-  expect(w.toasts.filter((t) => t.includes('waypoint-roles.json')).length).toBe(1)
+  expect(logs.filter((l) => l.includes('headway-roles.json')).length).toBe(2)
+  expect(w.toasts.filter((t) => t.includes('headway-roles.json')).length).toBe(1)
 })
 
 test('roles: the file is read again when its mtime moves, created, fixed or removed', async ($, on) => {
@@ -553,7 +553,7 @@ test('routerWarnings true (the default): R2 fires on a Workflow call lacking mod
 const BAND_PROPS = { hasSurvey: false, isWorking: false, maxRows: 16, bodyColumns: 100, scroll: { offset: 0, bodyRows: 15 }, view: {} }
 
 async function bandShows($): Promise<boolean> {
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   const found = (await ui.find({ type: 'Text', text: /Work/ })) !== undefined
   await ui.unmount()
   return found
@@ -562,7 +562,7 @@ async function bandShows($): Promise<boolean> {
 const FILES = { '/w/plan/p.md': PLAN }
 const TRACK = 'track plan/p.md "Work" column=landed'
 
-test('bandDefault on (the default): the band shows before any /waypoint band', async ($, on) => {
+test('bandDefault on (the default): the band shows before any /headway band', async ($, on) => {
   open(on, { files: FILES })
   on('ui.render', async (u, e) => u.ui.resolve(e).Text({ children: ['below'] }))
   await start($)
@@ -599,7 +599,7 @@ test('roles: a file over 64 KiB, or not a regular file, is not read; R3 stays of
   await start($)
   expect(w.reads.filter((p) => p === ROLE_FILE)).toEqual([])
   expect((await agentCall($, { subagent_type: 'scout', model: 'opus' })).context).toBe(undefined)
-  expect(logs.filter((l) => l.includes('waypoint-roles.json'))).toEqual(['waypoint: ' + ROLE_FILE + ' not read: file too large'])
+  expect(logs.filter((l) => l.includes('headway-roles.json'))).toEqual(['headway: ' + ROLE_FILE + ' not read: file too large'])
   // the file in range is read: exactly 64 KiB
   w.files[ROLE_FILE] = pad(ROLES, ROLES_MAX)
   w.mtimes[ROLE_FILE] = 2
@@ -611,7 +611,7 @@ test('roles: a file over 64 KiB, or not a regular file, is not read; R3 stays of
   w.mtimes[ROLE_FILE] = 3
   await w.clock.advance(10_000)
   expect(w.reads.filter((p) => p === ROLE_FILE).length).toBe(1)
-  expect(logs.filter((l) => l.includes('waypoint-roles.json')).pop()).toBe('waypoint: ' + ROLE_FILE + ' not read: not a regular file')
+  expect(logs.filter((l) => l.includes('headway-roles.json')).pop()).toBe('headway: ' + ROLE_FILE + ' not read: not a regular file')
 })
 
 test('skins: a store over 256 KiB is not read (skins at its defaults), one of exactly 256 KiB is', async ($, on) => {
@@ -623,7 +623,7 @@ test('skins: a store over 256 KiB is not read (skins at its defaults), one of ex
   await start($)
   expect(w.reads.filter((p) => p === store)).toEqual([])
   expect(themeOf(w)).toMatchObject({ name: 'noir', icons: 'unicode' }) // dracula/ascii is what the store says
-  expect(logs.filter((l) => l.includes('skins_example-mods'))).toEqual(['waypoint: ' + store + ' not read: file too large'])
+  expect(logs.filter((l) => l.includes('skins_example-mods'))).toEqual(['headway: ' + store + ' not read: file too large'])
   w.files[store] = pad(skinsFiles()[store], STORE_MAX)
   await start($)
   expect(themeOf(w)).toMatchObject({ name: 'dracula', icons: 'ascii' })
@@ -639,7 +639,7 @@ test('skins: a theme file over 64 KiB is not read; the theme falls to ANSI with 
   expect(w.reads.filter((p) => p === theme)).toEqual([])
   expect(themeOf(w).ansi).toBe(true)
   expect(w.toasts.length).toBe(1)
-  expect(logs.filter((l) => l.includes('dracula.ts'))).toEqual(['waypoint: ' + theme + ' not read: file too large'])
+  expect(logs.filter((l) => l.includes('dracula.ts'))).toEqual(['headway: ' + theme + ' not read: file too large'])
   w.files[theme] = pad(skinsFiles()[theme], THEME_MAX)
   await start($)
   expect(themeOf(w)).toMatchObject({ name: 'dracula', ansi: false })

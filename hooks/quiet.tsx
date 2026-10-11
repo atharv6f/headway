@@ -1,4 +1,4 @@
-// Transcript rows for waypoint's own tool (pure): one dim line per call, the result folded in.
+// Transcript rows for headway's own tool (pure): one dim line per call, the result folded in.
 // SPEC.md 10.4. `quietSegs` makes the line from the call's input and stored result; `quietTree`
 // draws it with the band's palette and glyphs. Neither calls `$`.
 import type { Seg } from './band.tsx'
@@ -72,20 +72,20 @@ function callLine(g: Glyphs, input: Record<string, unknown>): Seg[] {
     }
     if (tasks.length > 0) {
       const titles = tasks.map((t) => truncate(str(obj(t).title) ?? '?', TITLE_MAX))
-      return head(g.goal, 'waypoint ' + g.sep + ' ' + tasks.length + (tasks.length === 1 ? ' step: ' : ' steps: ') + titles.join(' ' + g.sep + ' '))
+      return head(g.goal, 'headway ' + g.sep + ' ' + tasks.length + (tasks.length === 1 ? ' step: ' : ' steps: ') + titles.join(' ' + g.sep + ' '))
     }
     if (items.length > 0) return steps(g, items)
-    return head(g.goal, 'waypoint ' + g.sep + ' report')
+    return head(g.goal, 'headway ' + g.sep + ' report')
   }
   if (action === 'track') {
     const file = str(input.file)
     const section = str(input.section)
     return head(g.goal, 'tracking ' + (file ?? '?') + (section !== undefined ? ' § ' + section : ''))
   }
-  if (action === 'state') return head(g.goal, 'waypoint state')
+  if (action === 'state') return head(g.goal, 'headway state')
   if (action === 'focus') return head(g.current, 'focus ' + (str(input.taskId) ?? '?'))
   if (action === 'untrack') return head(g.goal, 'untracked')
-  return head(g.goal, 'waypoint')
+  return head(g.goal, 'headway')
 }
 
 // The line for one call. A refusal or an error draws in the error colour with its text; a focus on an
@@ -99,10 +99,10 @@ function lineSegs(c: QuietCall): Seg[] {
   const reply = resultText(c.output)
   if (c.isErrored || (reply !== undefined && reply.startsWith('refused:'))) {
     const why = reply ?? 'failed'
-    return [{ text: g.failed + ' waypoint ' + g.sep + ' ' + why, el: 'failed' }]
+    return [{ text: g.failed + ' headway ' + g.sep + ' ' + why, el: 'failed' }]
   }
   if (reply !== undefined && reply.startsWith('unknown task:')) {
-    return [{ text: g.warning + ' waypoint ' + g.sep + ' ' + reply, el: 'warning' }]
+    return [{ text: g.warning + ' headway ' + g.sep + ' ' + reply, el: 'warning' }]
   }
   const line = callLine(g, obj(c.input))
   const unknown = reply === undefined ? null : /;\s*(unknown task:.*)$/.exec(reply)

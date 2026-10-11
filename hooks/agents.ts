@@ -1132,7 +1132,8 @@ export function buildTree(plan: Plan | null, agents: AgentRecord[], now?: number
 // ---------------------------------------------------------------- band line 2 (sections 2 and 8.1)
 
 export interface BandCurrent {
-  current?: { id: string; title: string; done: number; total: number; unit: 'agents' | 'items'; status?: 'partial' } // status: a partial task no agent works
+  current?: { id: string; title: string; done: number; total: number; unit: 'agents' | 'items'; status?: 'partial' | 'done' } // status: a partial task no agent works, or a done task (its bar is drawn done)
+  allDone?: true // every task of the plan is done and no agent is at work: line 2 reads `all done`, no task is current
   marks: { warned?: number; blocked?: number; running?: number; stalled?: number }
 }
 
@@ -1160,6 +1161,8 @@ export function bandCurrent(plan: Plan | null, agents: AgentRecord[], focus?: st
   if (count('running') > 0) marks.running = count('running')
   if (count('stalled') > 0) marks.stalled = count('stalled')
 
+  if (plan && plan.tasks.length > 0 && plan.tasks.every((t) => t.status === 'done') && !spawned.some((a) => !isFinished(a.status))) return { allDone: true, marks }
+
   const focused = plan && focus ? focusedCurrent(plan, spawned, focus) : undefined
   if (focused) return { current: focused, marks }
 
@@ -1184,12 +1187,13 @@ export function bandCurrent(plan: Plan | null, agents: AgentRecord[], focus?: st
   if (tid !== undefined) {
     const hits = plan ? plan.tasks.filter((t) => t.id === tid) : []
     const task = hits.find((t) => t.groups.some((gi) => plan!.groups[gi].id === pick!.groupId)) ?? hits[0]
-    if (task?.sub) return { current: { id: tid, title: task.title, done: task.sub.done, total: task.sub.total, unit: 'items' }, marks }
-    return { current: { id: tid, title: task?.title ?? '', ...byAgents }, marks }
+    const done = task?.status === 'done' ? { status: 'done' as const } : {}
+    if (task?.sub) return { current: { id: tid, title: task.title, done: task.sub.done, total: task.sub.total, unit: 'items', ...done }, marks }
+    return { current: { id: tid, title: task?.title ?? '', ...byAgents, ...done }, marks }
   }
   if (pick.groupId !== undefined) {
     const g = plan?.groups.find((x) => x.id === pick!.groupId)
-    return { current: { id: pick.groupId, title: g?.title ?? '', ...byAgents }, marks }
+    return { current: { id: pick.groupId, title: g?.title ?? '', ...byAgents, ...(g && plan && groupDone(plan, g) ? { status: 'done' as const } : {}) }, marks }
   }
   const loose = looseOf(pick)
   if (loose) {
@@ -1200,17 +1204,20 @@ export function bandCurrent(plan: Plan | null, agents: AgentRecord[], focus?: st
   return { current: { id: 'Unassigned', title: '', ...byAgents }, marks }
 }
 
+const groupDone = (plan: Plan, g: Plan['groups'][number]) => g.tasks.length > 0 && g.tasks.every((ti) => plan.tasks[ti].status === 'done')
+
 function focusedCurrent(plan: Plan, spawned: AgentRecord[], id: string): BandCurrent['current'] {
   const finished = (list: AgentRecord[]) => ({ done: list.filter((a) => isFinished(a.status)).length, total: list.length, unit: 'agents' as const })
   const task = plan.tasks.find((t) => t.id === id)
   if (task) {
-    if (task.sub) return { id, title: task.title, done: task.sub.done, total: task.sub.total, unit: 'items' }
+    const done = task.status === 'done' ? { status: 'done' as const } : {}
+    if (task.sub) return { id, title: task.title, done: task.sub.done, total: task.sub.total, unit: 'items', ...done }
     const own = finished(spawned.filter((a) => a.taskIds[0] === id))
-    return { id, title: task.title, ...own, ...(own.total === 0 && task.status === 'partial' ? { status: 'partial' as const } : {}) }
+    return { id, title: task.title, ...own, ...(own.total === 0 && task.status === 'partial' ? { status: 'partial' as const } : done) }
   }
   const group = plan.groups.find((g) => g.id === id)
   if (!group) return undefined
   const ids = new Set(group.tasks.map((ti) => plan.tasks[ti].id))
   const mine = spawned.filter((a) => a.groupId === id || (a.taskIds[0] !== undefined && ids.has(a.taskIds[0])))
-  return { id, title: group.title, ...finished(mine) }
+  return { id, title: group.title, ...finished(mine), ...(groupDone(plan, group) ? { status: 'done' as const } : {}) }
 }

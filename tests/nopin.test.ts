@@ -15,7 +15,7 @@ function spawnInput(n: number, description: string) {
 }
 
 async function band($): Promise<string[]> {
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   const out: string[] = []
   for (const re of [/no plan$/, /Agents|T2/, /no current task/, /below/]) {
     const t = await ui.find({ type: 'Text', text: re })

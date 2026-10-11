@@ -36,7 +36,7 @@ async function tool($, input: Record<string, unknown>): Promise<string> {
 const goalLine = async ($) => (await tool($, { action: 'state' })).split('\n')[0]
 
 async function bandLine1($): Promise<string | undefined> {
-  const ui = await $.ui.mount({ plugin: 'waypoint', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
+  const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'AbovePrompt', props: BAND_PROPS })
   const t = await ui.find({ type: 'Text', text: /◆/ })
   await ui.unmount()
   return t?.text as string | undefined
@@ -99,7 +99,7 @@ test('precedence: a pinned file hides the plan-mode plan and untrack reveals it;
   expect(await goalLine($)).toBe('goal: Tidy the notes folder — 0/4 done (plan)')
   const state = await tool($, { action: 'state' })
   expect(state).toContain('current: 3 Add a lint script')
-  expect(beneath.faults.filter((f) => !/^waypoint: (tool|command)\.register:/.test(f))).toEqual([]) // the harness has no registry
+  expect(beneath.faults.filter((f) => !/^headway: (tool|command)\.register:/.test(f))).toEqual([]) // the harness has no registry
 })
 
 test('precedence: a report hides the plan-mode plan, an approval clears the report, track and untrack keep it', async ($, on) => {
@@ -124,7 +124,7 @@ test('goal label: an untitled plan takes the newest composer prompt line; slash 
   planModeBeneath(on)
   await start($)
   await $.prompt.submit({ text: 'Tidy the notes into one folder\nwith an index', origin: { kind: 'composer' }, wait: false })
-  await $.prompt.submit({ text: '/waypoint status', origin: { kind: 'composer' }, wait: false })
+  await $.prompt.submit({ text: '/headway status', origin: { kind: 'composer' }, wait: false })
   await $.prompt.submit({ text: '<task-notification>\n<status>completed</status>', origin: { kind: 'task-notification' }, wait: false })
   await exitPlan($, '## Steps\n1. make the folder\n2. write the index\n')
   expect(await goalLine($)).toBe('goal: Tidy the notes into one folder — 0/2 done (plan)')
@@ -140,7 +140,7 @@ test('persistence: the plan-mode source and the label survive a fork reload, not
   await $.prompt.submit({ text: 'Count the words', origin: { kind: 'composer' }, wait: false })
   await exitPlan($, phases)
   await w.clock.advance(1000)
-  expect(beneath.faults.filter((f) => !/^waypoint: (tool|command)\.register:/.test(f))).toEqual([]) // the harness has no registry
+  expect(beneath.faults.filter((f) => !/^headway: (tool|command)\.register:/.test(f))).toEqual([]) // the harness has no registry
   const rec = w.store['session:s-1'] as { plan: { title: string; steps: unknown[]; text?: string }; label: Record<string, string>; prompt: string }
   expect(rec.plan.steps.length).toBe(12)
   expect(rec.plan.title).toBe('Word count tool')
