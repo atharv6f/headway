@@ -1,13 +1,13 @@
 import { expect, mock, test } from 'claude-code/testing'
 import { PLAN, start, TOOL, world } from './world.ts'
 import { bare, objects, text as flow } from './fixtures/flow.ts'
-import { addPlanned, bindRun, buildTree, completeAgent, spawnAgent, stepStart, tick } from '../hooks/agents.ts'
-import type { AgentRecord, PlannedInput } from '../hooks/agents.ts'
-import { parseWorkflow } from '../hooks/workflow.ts'
-import { phasePlan, phaseRun } from '../hooks/phases.ts'
-import { activeSource, goalLabel, sourcePlan } from '../hooks/sources.ts'
-import type { Sources } from '../hooks/sources.ts'
-import { parsePlanMode } from '../hooks/planmode.ts'
+import { addPlanned, bindRun, buildTree, completeAgent, spawnAgent, stepStart, tick } from '../plugin/hooks/agents.ts'
+import type { AgentRecord, PlannedInput } from '../plugin/hooks/agents.ts'
+import { parseWorkflow } from '../plugin/hooks/workflow.ts'
+import { phasePlan, phaseRun } from '../plugin/hooks/phases.ts'
+import { activeSource, goalLabel, sourcePlan } from '../plugin/hooks/sources.ts'
+import type { Sources } from '../plugin/hooks/sources.ts'
+import { parsePlanMode } from '../plugin/hooks/planmode.ts'
 import { text as nested } from './fixtures/plan-nested.ts'
 
 // Workflow phases as a plan source (SPEC 4.6): the run's phases are the tasks, its agents nest under
@@ -219,7 +219,7 @@ test('hooks: a Workflow call with meta.phases becomes the source; its agents nes
   expect(await goalLine($)).toBe('goal: Build then verify — 0/2 done (phases)')
   await $.agent.spawn(wfSpawn('toolu_f', 'wf_f', 1, 'build core'))
   const agents = () => w.last.agents as AgentRecord[]
-  expect(agents()[0]).toMatchObject({ id: 'w1', taskIds: ['Build'], groupId: 'Build then verify' })
+  expect(agents()[0]).toMatchObject({ id: 'wf:wf_f:1', taskIds: ['Build'], groupId: 'Build then verify' })
   expect(agents().filter((a) => a.planned).map((a) => a.taskIds[0])).toEqual(['Verify', 'Verify'])
   await done($, 'w1')
   await w.clock.advance(2000)

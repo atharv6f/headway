@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import { parseWorkflow } from '../hooks/workflow.ts'
-import type { PlannedCall, Value } from '../hooks/workflow.ts'
+import { parseWorkflow } from '../plugin/hooks/workflow.ts'
+import type { PlannedCall, Value } from '../plugin/hooks/workflow.ts'
 
 const lit = (value: string): Value => ({ kind: 'literal', value })
 const pat = (value: string): Value => ({ kind: 'pattern', value })

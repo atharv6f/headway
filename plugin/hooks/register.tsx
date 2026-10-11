@@ -1,8 +1,8 @@
 // Every on(...) and every $.* call. The pure modules (plan.ts, format.ts, agents.ts, theme.ts,
 // band.tsx, pane.tsx, pin.ts, tool.ts, persist.ts) carry the work.
 import { atom, read, update } from 'claude-code'
-import { RUN_TITLE_MAX, addPlanned, appendLog, bandCurrent, bindRun, buildTree, completeAgent, dropPlanned, isFinished, isShown, pinEntry, planFlips, reconcileList, repinAgents, rereadEntry, settleRestored, spawnAgent, stepEnd, stepStart, tick, unpinEntry } from './agents.ts'
-import type { AgentRecord, LogEntry, Outcome, PlannedInput } from './agents.ts'
+import { RUN_TITLE_MAX, addPlanned, appendLog, bandCurrent, bindAgent, bindRun, buildTree, completeAgent, dropPlanned, dropUnjoined, isFinished, isShown, pinEntry, planFlips, promptHead, reconcileList, repinAgents, rereadEntry, settleRestored, spawnAgent, spawnRecordId, stepEnd, stepStart, tick, unpinEntry } from './agents.ts'
+import type { AgentRecord, JoinHints, LogEntry, Outcome, PlannedInput } from './agents.ts'
 import { bandLines, bandTree, bandVisible } from './band.tsx'
 import { clean, plainName } from './format.ts'
 import { quietSegs, quietTree } from './quiet.tsx'
@@ -371,6 +371,7 @@ async function applyAgents($, fn: (agents: AgentRecord[]) => Outcome): Promise<A
   })
   if (!out.changed) return written
   remember({ agents: written })
+  prunePrompts(written)
   if (out.log.length > 0) remember({ log: await update($, logAtom, (log) => appendLog(log, out.log)) })
   // The phases source is derived from the agents: a write that moved a phase is its flip.
   if (written.some((a) => a.runPhases !== undefined)) {
@@ -1195,9 +1196,9 @@ function registerRender(on) {
 }
 
 // The transcript rows of headway's own tool: the engine runs this hook for that tool's rows alone (a
-// props matcher), and it is not registered at all when quietToolRows is off.
+// props matcher). With quietToolRows off it passes every row on (drawQuietRow); it is registered
+// either way, since a registration under a condition is one static analysis cannot read.
 function registerQuietRows(on) {
-  if (!quietOn) return
   on('ui.render', { component: ['ToolUse', 'ToolResult'], props: { tool: TOOL_NAME } }, async ($, e, next) => {
     try {
       return await drawQuietRow($, e, next)
@@ -1221,16 +1222,30 @@ function registerPaneClose(on) {
   }).catch(async ($, e, next) => next(e))
 }
 
-async function recordSpawn($, e, result): Promise<void> {
+// The head of each waiting spawn's prompt, by record id, until its agent is joined (agents.ts
+// joinSpawn). Memory only: after a restart a waiting spawn joins by its list row or alone.
+const spawnPrompts = new Map<string, string>()
+
+function prunePrompts(agents: AgentRecord[]): void {
+  for (const id of spawnPrompts.keys()) {
+    if (!agents.some((a) => a.id === id && a.agentId === undefined)) spawnPrompts.delete(id)
+  }
+}
+
+// The spawn is recorded from the event alone, before the engine starts the agent: what the engine
+// answers is not read (the hook passes the spawn on as it came), so the record has no agentId until
+// the agent's first step or its completion joins it (joinHints), or its Agent call's result does.
+async function recordSpawn($, e): Promise<void> {
   const inputs = await readInputs($)
   const plan = await currentPlan($, inputs)
   const temporal = isTemporal(activeSource(inputs))
   const at = await $.clock.now()
-  const deny = 'deny' in result ? String(result.deny) : undefined
   const dispatchWarnings = pendingWarnings.get(e.tool_use_id)
   pendingWarnings.delete(e.tool_use_id)
+  const head = promptHead(e.prompt)
+  if (head !== '') spawnPrompts.set(spawnRecordId({ toolUseId: e.tool_use_id, workflow: e.workflow }), head)
   // The focus action holds the current task until the next spawn.
-  if (deny === undefined && (await read($, focusAtom)) !== null) await update($, focusAtom, () => null)
+  if ((await read($, focusAtom)) !== null) await update($, focusAtom, () => null)
   await applyAgents($, (current) => {
     // A Workflow's agents spawn while its tool call runs: the run id binds its planned calls here
     // as well as when the call returns, whichever comes first.
@@ -1246,9 +1261,6 @@ async function recordSpawn($, e, result): Promise<void> {
         name: e.name,
         requestedModel: e.model,
         workflow: e.workflow ? { runId: e.workflow.runId, agentIndex: e.workflow.agentIndex } : undefined,
-        agentId: deny === undefined ? result.agentId : undefined,
-        model: deny === undefined ? result.model : undefined,
-        deny,
         warnings: dispatchWarnings,
       },
       { plan, temporal, roles: routerOn ? roles : undefined },
@@ -1257,14 +1269,41 @@ async function recordSpawn($, e, result): Promise<void> {
   await hideCompactHint($)
 }
 
+// What joins a new agentId to its waiting spawn (agents.ts joinSpawn): the opening of the agent's
+// transcript, its agent-list row, and the step's model and effort (a workflow agent has neither a
+// readable transcript nor a row). Undefined when the agentId already has its record.
+async function joinHints($, agentId: string, step: { model?: string; effort?: string | number } = {}): Promise<JoinHints | undefined> {
+  const known = 'agents' in written ? written.agents ?? [] : await read($, agentsAtom)
+  if (known.some((a) => a.agentId === agentId)) return undefined
+  let text: string | undefined
+  try {
+    const messages = await $.session.messages({ agentId })
+    if (Array.isArray(messages)) text = messages.find((m) => m.role === 'user' && typeof m.text === 'string')?.text
+  } catch {
+    // not readable: the list row, or the step's model and effort, decides
+  }
+  let row: { description: string; type: string } | undefined
+  try {
+    const found = (await $.agent.list()).find((x) => x.id === agentId)
+    if (found) row = { description: found.description, type: found.type }
+  } catch {
+    // no row
+  }
+  return {
+    ...(text !== undefined ? { text } : {}),
+    ...(row ? { row } : {}),
+    prompts: Object.fromEntries(spawnPrompts),
+    ...(step.model !== undefined ? { model: step.model } : {}),
+    ...(step.effort !== undefined ? { effort: String(step.effort) } : {}),
+  }
+}
+
 function registerTracking(on) {
-  // The record is written once next(e) has the agentId; a step that beats it is kept as a
-  // provisional record and joined here (agents.ts spawnAgent).
+  // Observed, never answered: the spawn is recorded from the event and passed on as it came; the
+  // agent's first step joins its agentId to the record (joinHints).
   on('agent.spawn', async ($, e, next) => {
-    const result = await next(e)
-    // Past next(e) a fault must not reach the .catch below, which would spawn the agent again.
-    await guarded($, 'agent.spawn', () => recordSpawn($, e, result))
-    return result
+    await guarded($, 'agent.spawn', () => recordSpawn($, e))
+    return next(e)
   }).catch(async ($, e, next) => next(e)) // tracking never gates a spawn: fail open
 
   // Main loop vs subagent: a subagent's step carries `agentId`, the main loop's does not.
@@ -1277,7 +1316,8 @@ function registerTracking(on) {
           const at = await $.clock.now()
           // a previous agent that resumes is matched afresh against the plan drawn now (5.3)
           const match = (await read($, agentsAtom)).some((a) => a.agentId === agentId && a.previous) ? await matchContext($) : undefined
-          await applyAgents($, (agents) => stepStart(agents, { at, agentId, model: e.model, effort: e.effort, roles: routerOn ? roles : undefined, match }))
+          const join = await joinHints($, agentId, { model: e.model, effort: e.effort })
+          await applyAgents($, (agents) => stepStart(agents, { at, agentId, model: e.model, effort: e.effort, roles: routerOn ? roles : undefined, match, join }))
         })
       : undefined
     let result
@@ -1303,8 +1343,9 @@ function registerTracking(on) {
     await guarded($, 'turn.complete', async () => {
       if (agentId) {
         const at = await $.clock.now()
+        const join = await joinHints($, agentId)
         const agents = await applyAgents($, (list) =>
-          completeAgent(list, { at, agentId, reason: e.reason, answer: e.answer, durationMs: e.durationMs, usage: e.usage }),
+          completeAgent(list, { at, agentId, reason: e.reason, answer: e.answer, durationMs: e.durationMs, usage: e.usage, join }),
         )
         noteAgentFinished(agents, agentId)
       } else {
@@ -1494,6 +1535,16 @@ async function definedModel($, subagentType: string | undefined): Promise<string
   }
 }
 
+async function settleSpawn($, toolUseId: string, result): Promise<void> {
+  const agentId = result?.result?.agentId
+  if (typeof agentId === 'string' && agentId !== '') {
+    const at = await $.clock.now()
+    await applyAgents($, (agents) => bindAgent(agents, toolUseId, agentId, at, routerOn ? roles : undefined))
+  } else if (('deny' in result && result.deny) || result?.isError) {
+    await applyAgents($, (agents) => dropUnjoined(agents, toolUseId))
+  }
+}
+
 async function routeAgentCall($, e, next) {
   const named = routerOn && !e.model && roleOf(e.subagent_type) !== 'fork' ? await definedModel($, e.subagent_type) : undefined
   const input = { description: e.description ?? '', subagentType: e.subagent_type, model: e.model, definedModel: named }
@@ -1501,6 +1552,10 @@ async function routeAgentCall($, e, next) {
   // The mark is kept before next(e), which is where the agent.spawn that reads it happens.
   if (found.length > 0 && e.tool_use_id) pendingWarnings.set(e.tool_use_id, found.map(warningString))
   const result = await next(e)
+  // The result names the call's agentId: its spawn takes it if no step has joined it yet. A call
+  // that came back denied or as an error with none: the engine refused the spawn, its record goes.
+  // Past next(e) a fault must not reach the caller's .catch, which would run the Agent call again.
+  if (e.tool_use_id) await guarded($, 'tool.call Agent join', () => settleSpawn($, e.tool_use_id, result))
   if ('deny' in result && result.deny) {
     if (e.tool_use_id) pendingWarnings.delete(e.tool_use_id)
     return result

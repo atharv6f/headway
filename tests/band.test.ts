@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import { bandLayout, bandLines, bandVisible } from '../hooks/band.tsx'
-import type { BandData, Seg } from '../hooks/band.tsx'
+import { bandLayout, bandLines, bandVisible } from '../plugin/hooks/band.tsx'
+import type { BandData, Seg } from '../plugin/hooks/band.tsx'
 
 const plain = (line: Seg[]) => line.map((s) => s.text).join('')
 const width = (line: Seg[]) => Array.from(plain(line)).length

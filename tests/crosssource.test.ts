@@ -1,9 +1,9 @@
 import { expect, test } from 'claude-code/testing'
-import { start, TOOL, world } from './world.ts'
+import { start, TOOL, transcripts, world } from './world.ts'
 import { text as flow } from './fixtures/flow.ts'
-import { bandLines } from '../hooks/band.tsx'
-import { bandCurrent } from '../hooks/agents.ts'
-import { reportPlan } from '../hooks/tool.ts'
+import { bandLines } from '../plugin/hooks/band.tsx'
+import { bandCurrent } from '../plugin/hooks/agents.ts'
+import { reportPlan } from '../plugin/hooks/tool.ts'
 
 // Rules that cross the plan sources (SPEC 4.8, 3, 8): the goal label belongs to the prompt that
 // started the active source; every in-memory source logs its task flips the same way and marks a
@@ -22,7 +22,12 @@ function engine(on) {
     return { result: 'ok' }
   })
   on('prompt.submit', async (_$, e) => ({ text: e.text }))
-  on('agent.spawn', async () => ({ model: 'claude-haiku-5-5', agentId: 'w' + ++n }))
+  const spawned = transcripts(on)
+  on('agent.spawn', async (_$, e) => {
+    const agentId = 'w' + ++n
+    spawned(agentId, e.prompt)
+    return { model: 'claude-haiku-5-5', agentId }
+  })
   on('turn.step', async function* (_$, e) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: USAGE }
   })

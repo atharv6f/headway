@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
-import * as router from '../hooks/router.ts'
-import { definitionModel, definitionName, definitionPlugin, parseRoles, projectDirs, roleOf, ruleR1, ruleR2, ruleR3, ruleR4, searchDirs } from '../hooks/router.ts'
-import type { Roles } from '../hooks/router.ts'
+import * as router from '../plugin/hooks/router.ts'
+import { definitionModel, definitionName, definitionPlugin, parseRoles, projectDirs, roleOf, ruleR1, ruleR2, ruleR3, ruleR4, searchDirs } from '../plugin/hooks/router.ts'
+import type { Roles } from '../plugin/hooks/router.ts'
 
 // The example role file of SPEC.md section 7: the only place a role table lives.
 const EXAMPLE = JSON.stringify({

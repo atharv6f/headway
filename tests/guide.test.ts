@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import { PLAN, start, TOOL, world } from './world.ts'
 import { text as nested } from './fixtures/plan-nested.ts'
 import * as f from './fixtures/report.ts'
-import { GUIDE_ID, GUIDE_TEXT } from '../hooks/tool.ts'
+import { GUIDE_ID, GUIDE_TEXT } from '../plugin/hooks/tool.ts'
 
 // P2 through the hooks: report updates and refusals (SPEC 4.3), partial in the goal, the band and the
 // state block, temporal association at a spawn (5.3), and the guidance section (6).

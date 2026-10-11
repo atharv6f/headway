@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import { parseWorkflow, scan } from '../hooks/workflow.ts'
-import type { Span } from '../hooks/workflow.ts'
+import { parseWorkflow, scan } from '../plugin/hooks/workflow.ts'
+import type { Span } from '../plugin/hooks/workflow.ts'
 import * as flow from './fixtures/flow.ts'
 
 // The script scanner is one forward pass: its time is linear in the script, whatever the nesting.

@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { absolutePath, parsePinArgs, readFailure } from '../hooks/pin.ts'
+import { absolutePath, parsePinArgs, readFailure } from '../plugin/hooks/pin.ts'
 
 const CWD = '/home/dev/project'
 

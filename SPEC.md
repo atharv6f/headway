@@ -483,11 +483,11 @@ label and the newest prompt are kept in the session record.
 
 | Event | Used for | Fields read |
 | :- | :- | :- |
-| `tool.call` `{ tool: 'Agent' }` | router rules at dispatch; the ID search text | `e.description`, `e.prompt`, `e.subagent_type`, `e.model`, `e.name`, `e.tool_use_id` |
-| `agent.spawn` | create the record; for a Workflow agent, the join (5.2) | `e.tool_use_id`, `e.description`, `e.subagentType`, `e.prompt`, `e.name`, `e.parentAgentId`, `e.workflow?.{runId, agentIndex}`; from `await next(e)`: `agentId`, `model`, or `deny` |
+| `tool.call` `{ tool: 'Agent' }` | router rules at dispatch; the ID search text; after `next(e)`, the spawn's agentId or its refusal (below) | `e.description`, `e.prompt`, `e.subagent_type`, `e.model`, `e.name`, `e.tool_use_id`; after `next(e)`: `result.result.agentId`, `deny`, `isError` |
+| `agent.spawn` (observed: the hook records, then `return next(e)`, and never reads what `next` answers) | create the record; for a Workflow agent, the join (5.2) | `e.tool_use_id`, `e.description`, `e.subagentType`, `e.prompt`, `e.name`, `e.parentAgentId`, `e.workflow?.{runId, agentIndex}` |
 | `tool.call` `{ tool: 'Workflow' }` | parse the script; rule R2, logged, toasted and noted only after `next(e)` and only when the call was not denied; after `next(e)`: `result.result.runId` | `$.fs.read` of where `e.scriptPath` lands when it lands inside the project or the Claude Code config directory and is a regular file of at most 256 KiB (the tool prefers it to `script`, so headway reads the same text; section 14), else `e.script` when it is at most 262,144 characters (256 Ki); a longer inline script is not parsed |
-| `turn.step` (async generator, `yield* next(e)`) | running status, last activity, model, effort, tokens | `e.agentId`, `e.model`, `e.effort`, `result.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, model}` |
-| `turn.complete` | final status, answer, duration | `e.agentId`, `e.reason`, `e.answer`, `e.durationMs`, `e.usage` |
+| `turn.step` (async generator, `yield* next(e)`) | running status, last activity, model, effort, tokens; the spawn join (below) | `e.agentId`, `e.model`, `e.effort`, `result.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens, model}`; for an `agentId` no record has: `$.session.messages({ agentId })` (its first user message) and its `$.agent.list()` row |
+| `turn.complete` | final status, answer, duration; the spawn join, as at a step | `e.agentId`, `e.reason`, `e.answer`, `e.durationMs`, `e.usage` |
 | `$.agent.list()` on the 15 s timer | `failed`/`killed` the events missed; `name` | `id`, `status`, `name`, `description` |
 
 The record is the `agents` atom's element type in `types/index.d.ts`: `id` is `agentId` when
@@ -496,9 +496,29 @@ known, else `tool_use_id`, else `wf:<runId>:<ordinal>`; `taskIds[]` and `groupId
 `estUsd`; `warnings[]`; and the workflow fields `runId`, `agentIndex`, `label`, `phase`,
 `runTitle`, `planned`, `skipped`, `unordered`, `provisional`.
 
-A step or completion whose `agentId` no record has yet is a provisional record until its spawn
-writes (the spawn hook writes after `next(e)`, so a fast agent can beat it). One that only steps and
-is quiet for 2 minutes is dropped. One that finishes and that no spawn claims within 15 s is an
+**The spawn join.** The Claude plugin directory requires a hook on `agent.spawn` to pass the
+event on unchanged with `return next(e)`, so the spawn hook records from the event alone, before
+the engine starts the agent, and the record has no `agentId` (its `id` is the `tool_use_id`, or
+`wf:<runId>:<agentIndex>`; its model is the alias asked for until the first step resolves it). A
+step or completion whose `agentId` no record has joins a waiting spawn (one with no `agentId`, no
+step, queued or stalled, not a planned call), in this order: when some waiting spawn has a prompt
+head (the first 160 characters of its prompt, white space folded, kept in memory), the earliest
+whose head the agent's first user message holds, ties told apart by the list row, and none when no
+head matches (an engine fork, which no spawn announced, is not taken for one); else, with a
+`$.agent.list()` row, the earliest with the row's `description` and `type`. A workflow agent has
+neither (*verified* 2.1.296: `$.session.messages({ agentId })` refuses it at its first step and the
+list does not name it), so with neither the agent joins the earliest waiting workflow spawn whose
+asked-for model family and effort fit the step's (`agentIndex` breaks a tie), and none when no
+workflow spawn fits; when no workflow spawn waits, only a spawn waiting alone joins. Parallel
+workflow agents with the same model and effort are therefore joined in spawn order, which is the
+order of their first steps as far as observed. The Agent call's result carries the `agentId`: a spawn of
+that `tool_use_id` still waiting takes it, folding in the provisional record its steps made. An
+Agent call that comes back denied or as an error with no `agentId` means the engine refused the
+spawn: a waiting record of that `tool_use_id` is dropped. A Workflow agent the engine refused has
+no such result; its record waits and is marked stalled after `startMinutes`.
+
+A step or completion that joins no spawn is a provisional record. One that only steps and is
+quiet for 2 minutes is dropped. One that finishes and that no spawn claims within 15 s is an
 agent the engine raised no `agent.spawn` for (a stalled workflow agent's retry runs under a new
 `agentId`): it is kept under `Unassigned` with its answer and cost; it joins a workflow record only
 when exactly one workflow agent is stalled and went quiet before the retry began, in which case the
@@ -876,8 +896,9 @@ skipped when percent and cost are unchanged.
 
 A `ui.render` hook of its own serves `ToolUse` and `ToolResult`, registered with a props matcher,
 `{ component: ['ToolUse', 'ToolResult'], props: { tool: 'mcp__headway__headway' } }` (*verified*
-2.1.296, A21: the engine runs it for that tool's rows only, so no other tool's row reaches headway), and
-not registered at all when `quietToolRows` is false. It does not call `next`:
+2.1.296, A21: the engine runs it for that tool's rows only, so no other tool's row reaches headway). It
+is registered whatever `quietToolRows` says (every registration is unconditional, so static analysis
+reads it) and with `quietToolRows: false` returns `next(e)`. Otherwise it does not call `next`:
 `ToolUse` returns one line (`hooks/quiet.tsx`, from `input` and the stored `output`, which is the
 reply text), `ToolResult` returns an empty `Box`. Any other tool, or `quietToolRows: false`, keeps
 its stock row. The line is built from the call, so it draws while the call runs, and the reply is folded

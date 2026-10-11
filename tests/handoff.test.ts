@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { start, TOOL, world, userCommand } from './world.ts'
 import { text as nested } from './fixtures/plan-nested.ts'
-import { GUIDE_TEXT, TOOL_SPEC } from '../hooks/tool.ts'
+import { GUIDE_TEXT, TOOL_SPEC } from '../plugin/hooks/tool.ts'
 
 // The plan-mode handoff (SPEC 4.3, 4.4, 6): after an approval headway already tracks the plan, so a
 // `track` of the plan file and a full `report` list in the same turn are refused or turned into a no-op.

@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { bar, basename, clean, formatAgo, formatClock, formatCounts, formatDuration, formatEstUsd, formatTokens, formatUsd, stripControls, truncate } from '../hooks/format.ts'
+import { bar, basename, clean, formatAgo, formatClock, formatCounts, formatDuration, formatEstUsd, formatTokens, formatUsd, stripControls, truncate } from '../plugin/hooks/format.ts'
 
 const FRAC = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
 

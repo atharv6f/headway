@@ -8,11 +8,11 @@ import {
   line3Data,
   noteBoundary,
   START,
-} from '../hooks/usage.ts'
-import type { Boundary, Hint } from '../hooks/usage.ts'
-import type { AgentRecord, LogEntry } from '../hooks/agents.ts'
-import { parsePlan } from '../hooks/plan.ts'
-import type { Plan } from '../hooks/plan.ts'
+} from '../plugin/hooks/usage.ts'
+import type { Boundary, Hint } from '../plugin/hooks/usage.ts'
+import type { AgentRecord, LogEntry } from '../plugin/hooks/agents.ts'
+import { parsePlan } from '../plugin/hooks/plan.ts'
+import type { Plan } from '../plugin/hooks/plan.ts'
 
 const ARMED = 'compact-at-next-boundary' as const
 const NOW = 'compact-now' as const

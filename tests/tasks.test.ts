@@ -1,10 +1,10 @@
 import { expect, test } from 'claude-code/testing'
-import { applyTaskCall, parseTaskFile, rebuildFromFiles, tasksPlan, todoId } from '../hooks/tasks.ts'
-import { TASKS_MAX, TITLE_MAX } from '../hooks/format.ts'
-import type { TaskItem } from '../hooks/tasks.ts'
-import { activeSource, approvePlan, goalLabel, sourceFlips, sourcePlan } from '../hooks/sources.ts'
-import type { Sources } from '../hooks/sources.ts'
-import { parsePlanMode } from '../hooks/planmode.ts'
+import { applyTaskCall, parseTaskFile, rebuildFromFiles, tasksPlan, todoId } from '../plugin/hooks/tasks.ts'
+import { TASKS_MAX, TITLE_MAX } from '../plugin/hooks/format.ts'
+import type { TaskItem } from '../plugin/hooks/tasks.ts'
+import { activeSource, approvePlan, goalLabel, sourceFlips, sourcePlan } from '../plugin/hooks/sources.ts'
+import type { Sources } from '../plugin/hooks/sources.ts'
+import { parsePlanMode } from '../plugin/hooks/planmode.ts'
 
 // Claude's task tools as a plan source (SPEC 4.5): the payloads of TaskCreate, TaskUpdate and TodoWrite
 // folded into one list, the task files of a resume, and the list as a plan.

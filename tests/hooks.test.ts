@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { transcripts } from './world.ts'
 
 // The hooks in register.tsx, driven through the engine. The engine's `$` has no state noun, so a
 // hook beneath the plugin watches what it writes to `$.state` and passes each write on.
@@ -26,7 +27,12 @@ function spawnInput(over: Record<string, unknown>) {
 
 function beneath(on, ids: string[]) {
   let n = 0
-  on('agent.spawn', async () => ({ model: 'claude-haiku-5-5', agentId: ids[n++] }))
+  const spawned = transcripts(on)
+  on('agent.spawn', async (_$, e) => {
+    const agentId = ids[n++]
+    spawned(agentId, e.prompt)
+    return { model: 'claude-haiku-5-5', agentId }
+  })
   on('turn.step', async function* (_$, e) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: USAGE }
   })
@@ -41,16 +47,16 @@ async function step($, agentId: string) {
   }
 }
 
-test('hooks: a workflow agent is recorded with the agentId next(e) gave, steps, and turns done', async ($, on) => {
+test('hooks: a workflow agent is recorded at its spawn, takes its agentId at its first step, steps, and turns done', async ($, on) => {
   mock.clock(on, { now: 1000 })
   const st = watchState(on)
   beneath(on, ['aa1cb73e7de0a0378'])
   await $.agent.spawn(spawnInput({ description: 'R02-73 case read', subagentType: 'workflow-subagent', model: 'haiku', workflow: { runId: 'wf_1', agentIndex: 1 } }))
   let agents = st.agents()
-  expect(agents.map((a) => a.id + ':' + a.status)).toEqual(['aa1cb73e7de0a0378:queued'])
+  expect(agents.map((a) => a.id + ':' + a.status)).toEqual(['wf:wf_1:1:queued'])
   await step($, 'aa1cb73e7de0a0378')
   agents = st.agents()
-  expect(agents[0]).toMatchObject({ status: 'running', effort: 'low', model: 'claude-haiku-5-5', steps: 1 })
+  expect(agents[0]).toMatchObject({ id: 'aa1cb73e7de0a0378', status: 'running', effort: 'low', model: 'claude-haiku-5-5', steps: 1 })
   await $.turn.complete({ answer: 'ok', durationMs: 867, isAborted: false, turnId: 't-x', agentId: 'aa1cb73e7de0a0378', reason: 'answer', usage: USAGE })
   agents = st.agents()
   expect(agents[0].status).toBe('done')
@@ -205,7 +211,8 @@ test('router: a Workflow script is parsed at the call; R2 is the context; the sp
   await $.agent.spawn(wfSpawn(1, 'R02-73 case read'))
   await $.agent.spawn(wfSpawn(2, 'API1 endpoint list'))
   agents = st.agents() as typeof agents
-  expect(agents.map((a) => a.id)).toEqual(['w1', 'w2'])
+  // each spawn took its planned call's slot; the agentId joins at the agent's first step
+  expect(agents.map((a) => a.id + ':' + (a.planned === true))).toEqual(['wf:wf_9:1:false', 'wf:wf_9:2:false'])
   expect(agents[0]).toMatchObject({ phase: 'Build', requestedModel: 'haiku', effort: 'low', warnings: [] })
   expect(agents[1]).toMatchObject({ phase: 'Verify', requestedModel: 'haiku' })
   expect(agents[1].effort).toBe(undefined)
@@ -244,7 +251,9 @@ test('router: agents that spawn while the Workflow call is still running join th
   release()
   await call
   const agents = st.agents() as Array<Rec & { phase?: string; planned?: boolean }>
-  expect(agents.find((a) => a.id === 'w1')).toMatchObject({ phase: 'Build', effort: 'low' })
+  expect(agents.find((a) => a.id === 'wf:wf_9:1' && !a.planned)).toMatchObject({ phase: 'Build', effort: 'low' })
+  await step($, 'w1')
+  expect((st.agents() as typeof agents).find((a) => a.id === 'w1')).toMatchObject({ phase: 'Build', effort: 'low' })
 })
 
 test('router: a script is read from scriptPath, which the tool prefers to an inline script', async ($, on) => {
@@ -589,6 +598,8 @@ test('containment: an agent.spawn without a prompt still records the agent', asy
   const st = watchState(on)
   beneath(on, ['np1'])
   await $.agent.spawn(spawnInput({ prompt: undefined }))
+  expect(st.agents().map((a) => a.id)).toEqual(['toolu_1'])
+  await step($, 'np1') // alone, it joins without a prompt to compare
   expect(st.agents().map((a) => a.id)).toEqual(['np1'])
 })
 

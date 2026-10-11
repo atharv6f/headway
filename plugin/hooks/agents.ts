@@ -39,7 +39,7 @@ export interface AgentRecord {
   groupId?: string // the group the match resolved to, or the group the agent names
   role: string
   requestedModel?: string // the alias the call passed
-  model?: string // resolved: from agent.spawn's result, then each turn.step
+  model?: string // resolved: from each turn.step (the spawn's answer is not read)
   effort?: string
   status: AgentStatus
   reason?: string // why it failed: error, refusal, aborted, failed, killed
@@ -102,9 +102,11 @@ export interface SpawnEvent {
   name?: string
   requestedModel?: string // agent.spawn's e.model
   workflow?: { runId: string; agentIndex: number }
-  agentId?: string // from next(e)
-  model?: string // from next(e)
-  deny?: string // from next(e)
+  // The spawn hook passes none of these (it does not read what next(e) answers; the agentId joins
+  // later, joinSpawn); a caller that knows them may.
+  agentId?: string
+  model?: string
+  deny?: string // a refused spawn: no record
   warnings?: string[] // router warnings found at the dispatch (tool.call), stored on the record
 }
 
@@ -521,6 +523,149 @@ export function spawnAgent(agents: AgentRecord[], ev: SpawnEvent, ctx: MatchCont
   return { agents: next, log, changed: true }
 }
 
+// ---------------------------------------------------------------- the spawn join (5.1)
+// The agent.spawn hook observes and passes the spawn on as it came (register.tsx), so its record is
+// written from the event, before the engine starts the agent, and has no agentId. The agent's first
+// step or its completion joins the agentId to it (joinSpawn); the Agent tool's result, which carries
+// the agentId, confirms it (bindAgent); a spawn the engine refused is dropped (dropUnjoined).
+
+// What tells a new agentId's spawn: the agent's transcript, which opens with the prompt it was
+// spawned with; its `$.agent.list()` row; the head of each waiting spawn's prompt, by record id,
+// kept in memory only; and the step's model and effort. A workflow agent has neither a readable
+// transcript nor a row at its first step (2.1.296), so only its model and effort tell it apart.
+export interface JoinHints {
+  text?: string
+  row?: { description: string; type: string }
+  prompts: Record<string, string>
+  model?: string
+  effort?: string
+}
+
+const JOIN_HEAD = 160
+const JOIN_TEXT = 8192
+
+function squash(s: string): string {
+  return s.replace(/\s+/g, ' ').trim()
+}
+
+// The part of a prompt a join compares: its first JOIN_HEAD characters, white space folded.
+export function promptHead(prompt: string | undefined): string {
+  return squash((prompt ?? '').slice(0, JOIN_HEAD * 4)).slice(0, JOIN_HEAD)
+}
+
+// The id spawnAgent gives a spawn's record (the agentId is not known at the spawn).
+export function spawnRecordId(ev: { toolUseId: string; workflow?: { runId: string; agentIndex: number } }): string {
+  return ev.workflow ? 'wf:' + ev.workflow.runId + ':' + ev.workflow.agentIndex : ev.toolUseId
+}
+
+function waitingSpawn(a: AgentRecord): boolean {
+  return a.agentId === undefined && !a.planned && !a.provisional && !a.skipped && a.steps === 0 && (a.status === 'queued' || a.status === 'stalled')
+}
+
+// Whether a waiting workflow spawn could be the agent of a step on `model` at `effort`: the family
+// the call asked for and the effort it set, where both sides name one.
+function fitsStep(a: AgentRecord, hints: JoinHints): boolean {
+  const asked = familyOf(a.requestedModel)
+  const ran = familyOf(hints.model)
+  if (asked !== 'unknown' && ran !== 'unknown' && asked !== ran) return false
+  return a.effort === undefined || hints.effort === undefined || a.effort === hints.effort
+}
+
+// The waiting spawn a new agentId belongs to, or -1. A transcript decides when some waiting spawn has
+// a prompt head: the earliest whose head the transcript holds, else none (an engine fork, which no
+// spawn announced, joins nothing). Else a list row decides: the earliest with its description and
+// type. With neither, the agent is a workflow agent (or an engine fork): it joins the earliest
+// waiting workflow spawn that fits its step's model and effort, agentIndex breaking a tie; when no
+// workflow spawn waits, only a spawn waiting alone joins.
+export function joinSpawn(agents: AgentRecord[], hints: JoinHints): number {
+  const waiting: Array<[AgentRecord, number]> = []
+  agents.forEach((a, i) => {
+    if (waitingSpawn(a)) waiting.push([a, i])
+  })
+  if (waiting.length === 0) return -1
+  const earliest = (xs: Array<[AgentRecord, number]>) => (xs.length === 0 ? -1 : xs.reduce((b, x) => (x[0].spawnedAt < b[0].spawnedAt ? x : b))[1])
+  const row = hints.row
+  const byRow = (xs: Array<[AgentRecord, number]>) => (row ? xs.filter(([a]) => a.description === row.description && a.subagentType === row.type) : [])
+  if (hints.text !== undefined) {
+    const headed = waiting.filter(([a]) => (hints.prompts[a.id] ?? '') !== '')
+    if (headed.length > 0) {
+      const text = squash(hints.text.slice(0, JOIN_TEXT))
+      const found = headed.filter(([a]) => text.includes(hints.prompts[a.id]))
+      // spawns with the same prompt are told apart by the row, where there is one
+      const told = found.length > 1 ? byRow(found) : []
+      return earliest(told.length > 0 ? told : found)
+    }
+  }
+  if (row) return earliest(byRow(waiting))
+  const flows = waiting.filter(([a]) => a.runId !== undefined)
+  if (flows.length > 0) {
+    const fit = flows.filter(([a]) => fitsStep(a, hints))
+    if (fit.length === 0) return -1
+    return fit.reduce((b, x) => (x[0].spawnedAt < b[0].spawnedAt || (x[0].spawnedAt === b[0].spawnedAt && (x[0].agentIndex ?? 0) < (b[0].agentIndex ?? 0)) ? x : b))[1]
+  }
+  return waiting.length === 1 ? waiting[0][1] : -1
+}
+
+// Gives record `i` the agentId, folding in a provisional record of the same agent (its steps came
+// before the join). Undefined when the agentId already belongs to another real record.
+function attach(list: AgentRecord[], i: number, agentId: string, at: number, roles?: Roles): Outcome | undefined {
+  const r = list[i]
+  const pi = indexOfAgent(list, agentId)
+  const early = pi >= 0 && pi !== i ? list[pi] : undefined
+  if (early && !early.provisional) return undefined
+  const joined: AgentRecord = clean({
+    ...r,
+    id: agentId,
+    agentId,
+    ...(early
+      ? {
+          model: early.model ?? r.model,
+          effort: early.effort ?? r.effort,
+          status: early.status,
+          reason: early.reason,
+          question: early.question,
+          spawnedAt: Math.min(r.spawnedAt, early.spawnedAt),
+          firstStepAt: early.firstStepAt,
+          lastStepAt: early.lastStepAt,
+          endedAt: early.endedAt,
+          durationMs: early.durationMs,
+          steps: early.steps,
+          tokens: early.tokens,
+          estUsd: r.estUsd + early.estUsd,
+        }
+      : {}),
+  })
+  // steps that came before the join could not be routed (the early record had no role): do it now
+  const late = early && early.firstStepAt !== undefined ? firstStepWarnings(joined, joined.model, joined.effort, roles) : []
+  const routed = late.length > 0 ? { ...joined, warnings: [...joined.warnings, ...late.map(warningString)] } : joined
+  let out = replaceAt(list, i, routed)
+  if (early) out = out.filter((_, k) => k !== pi)
+  const log = [...(early && isFinished(early.status) ? [finishEntry(routed, early.endedAt ?? at)] : []), ...late.map((w) => warnEntry(w, routed, early?.firstStepAt ?? at))]
+  return { agents: out, log, changed: true }
+}
+
+// The Agent tool's result names the agentId of the call's spawn: a spawn still waiting takes it.
+export function bindAgent(agents: AgentRecord[], toolUseId: string, agentId: string, at: number, roles?: Roles): Outcome {
+  const i = agents.findIndex((a) => a.toolUseId === toolUseId && a.runId === undefined && !a.planned && !a.provisional)
+  if (i < 0 || agents[i].agentId !== undefined) return SAME(agents)
+  return attach(agents, i, agentId, at, roles) ?? SAME(agents)
+}
+
+// An Agent call that came back denied or as an error before its agent ever stepped: the engine
+// refused the spawn, so its record goes.
+export function dropUnjoined(agents: AgentRecord[], toolUseId: string): Outcome {
+  const out = agents.filter((a) => !(a.toolUseId === toolUseId && a.runId === undefined && !a.planned && a.agentId === undefined && a.steps === 0))
+  return out.length === agents.length ? SAME(agents) : { agents: out, log: [], changed: true }
+}
+
+// The record a first step or a completion of an unknown agentId lands on: the waiting spawn it joins
+// (given the agentId), else a new provisional record.
+function landing(list: AgentRecord[], agentId: string, at: number, join: JoinHints | undefined): { list: AgentRecord[]; i: number } {
+  const j = joinSpawn(list, join ?? { prompts: {} })
+  if (j >= 0) return { list: replaceAt(list, j, { ...list[j], id: agentId, agentId }), i: j }
+  return { list: [...list, provisional(agentId, at)], i: list.length }
+}
+
 // ---------------------------------------------------------------- planned workflow calls (4.2)
 
 export interface PlannedInput {
@@ -611,14 +756,11 @@ function firstStepWarnings(r: AgentRecord, model: string | undefined, effort: st
 // `match`: the context a resumed `previous` agent is matched in afresh (5.3); it then drops the mark.
 export function stepStart(
   agents: AgentRecord[],
-  ev: { at: number; agentId: string; model?: string; effort?: string | number; roles?: Roles; match?: MatchContext },
+  ev: { at: number; agentId: string; model?: string; effort?: string | number; roles?: Roles; match?: MatchContext; join?: JoinHints },
 ): Outcome {
   let list = agents
   let i = indexOfAgent(list, ev.agentId)
-  if (i < 0) {
-    list = [...list, provisional(ev.agentId, ev.at)]
-    i = list.length - 1
-  }
+  if (i < 0) ({ list, i } = landing(list, ev.agentId, ev.at, ev.join))
   const r = list[i]
   // A step for a finished agent is a SendMessage resume (no new agent.spawn fires): it reopens.
   const resumed = isFinished(r.status)
@@ -672,14 +814,11 @@ export function stepEnd(agents: AgentRecord[], ev: { at: number; agentId: string
 
 export function completeAgent(
   agents: AgentRecord[],
-  ev: { at: number; agentId: string; reason: string; answer: string; durationMs: number; usage?: Usage },
+  ev: { at: number; agentId: string; reason: string; answer: string; durationMs: number; usage?: Usage; join?: JoinHints },
 ): Outcome {
   let list = agents
   let i = indexOfAgent(list, ev.agentId)
-  if (i < 0) {
-    list = [...list, provisional(ev.agentId, ev.at)]
-    i = list.length - 1
-  }
+  if (i < 0) ({ list, i } = landing(list, ev.agentId, ev.at, ev.join))
   const r = list[i]
   if (isFinished(r.status)) return SAME(agents)
   let status: AgentStatus = 'failed'

@@ -1,13 +1,13 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { addPlanned, bandCurrent, bindRun, buildTree, completeAgent, spawnAgent } from '../hooks/agents.ts'
-import type { AgentRecord, SpawnEvent } from '../hooks/agents.ts'
-import { bandLines } from '../hooks/band.tsx'
-import { agentRows, DEFAULT_UI, planView, rowText } from '../hooks/pane.tsx'
-import type { PaneData } from '../hooks/pane.tsx'
-import { capSession, asSaved } from '../hooks/persist.ts'
-import { parsePlan } from '../hooks/plan.ts'
-import type { Plan } from '../hooks/plan.ts'
-import { stateBlock } from '../hooks/tool.ts'
+import { addPlanned, bandCurrent, bindRun, buildTree, completeAgent, spawnAgent } from '../plugin/hooks/agents.ts'
+import type { AgentRecord, SpawnEvent } from '../plugin/hooks/agents.ts'
+import { bandLines } from '../plugin/hooks/band.tsx'
+import { agentRows, DEFAULT_UI, planView, rowText } from '../plugin/hooks/pane.tsx'
+import type { PaneData } from '../plugin/hooks/pane.tsx'
+import { capSession, asSaved } from '../plugin/hooks/persist.ts'
+import { parsePlan } from '../plugin/hooks/plan.ts'
+import type { Plan } from '../plugin/hooks/plan.ts'
+import { stateBlock } from '../plugin/hooks/tool.ts'
 import { PLAN, start, TOOL, world } from './world.ts'
 
 // Unmatched agents group by their workflow run, or under Agents (SPEC 2, 4.3, 8.1, 8.2): never under
@@ -215,7 +215,7 @@ test('hooks: the run title is meta.description, else meta.name, else none; spawn
     await $.tool.call({ tool: 'Workflow', script: SCRIPT(meta), tool_use_id: id })
     expect(st.agents().filter((a) => a.runId === 'wf_' + id).map((a) => a.runTitle)).toEqual([title, title])
     await $.agent.spawn({ tool_use_id: id, prompt: 'p', description: 'reader 1', subagentType: 'workflow-subagent', provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background: false, fork: false, model: 'haiku', workflow: { runId: 'wf_' + id, agentIndex: 1 } })
-    expect(st.agents().find((a) => a.runId === 'wf_' + id && a.agentId)?.runTitle).toBe(title)
+    expect(st.agents().find((a) => a.runId === 'wf_' + id && !a.planned)?.runTitle).toBe(title)
   }
 })
 

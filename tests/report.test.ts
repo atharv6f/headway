@@ -1,8 +1,8 @@
 import { expect, test } from 'claude-code/testing'
-import { applyUpdates, parseReport, reportPlan } from '../hooks/tool.ts'
-import type { Reported } from '../hooks/tool.ts'
-import { matchAgent } from '../hooks/agents.ts'
-import { TASKS_MAX, TITLE_MAX } from '../hooks/format.ts'
+import { applyUpdates, parseReport, reportPlan } from '../plugin/hooks/tool.ts'
+import type { Reported } from '../plugin/hooks/tool.ts'
+import { matchAgent } from '../plugin/hooks/agents.ts'
+import { TASKS_MAX, TITLE_MAX } from '../plugin/hooks/format.ts'
 import * as f from './fixtures/report.ts'
 
 // 4.3 report inputs, pure: a list (ids optional, three statuses), updates, done, and the refusals.

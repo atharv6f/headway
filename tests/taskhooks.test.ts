@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { start, TOOL, world } from './world.ts'
-import { todoId } from '../hooks/tasks.ts'
+import { todoId } from '../plugin/hooks/tasks.ts'
 import { text as nested } from './fixtures/plan-nested.ts'
 
 // Claude's task tools through the hooks (SPEC 4.5): the sequences for both families, a subagent's call,

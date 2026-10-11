@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { bandLines, bandVisible } from '../hooks/band.tsx'
+import { bandLines, bandVisible } from '../plugin/hooks/band.tsx'
 import { PLAN, start, TOOL, world } from './world.ts'
 
 // The band with agents and no plan (SPEC 8.1): line 1 says no plan is pinned, line 2 carries the

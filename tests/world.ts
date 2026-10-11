@@ -156,6 +156,20 @@ export const PLAN = `# Plan
 | T3 | third | | |
 `
 
+// The engine's agent transcripts (`$.session.messages({ agentId })`): an agent's opens with the
+// prompt it was spawned with. A test engine's agent.spawn calls `spawned(agentId, prompt)`; headway
+// joins a spawn to its agentId by that opening (agents.ts joinSpawn).
+export function transcripts(on): (agentId: string, prompt: string | undefined) => void {
+  const prompts: Record<string, string> = {}
+  on('session.messages', async (_$, e) => {
+    const p = e.agentId !== undefined ? prompts[e.agentId] : undefined
+    return { value: p === undefined ? { deny: 'no such agent' } : [{ role: 'user', text: p, toolUses: [] }] }
+  })
+  return (agentId, prompt) => {
+    if (prompt !== undefined) prompts[agentId] = prompt
+  }
+}
+
 // The user's own `/headway <args>`, typed at the prompt: the engine stamps it `composer` (SPEC 9.2).
 export function userCommand($, args: string) {
   return $.command.run({ command: 'headway', args, origin: { kind: 'composer' } } as never)

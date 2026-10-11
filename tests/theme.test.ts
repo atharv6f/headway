@@ -15,7 +15,7 @@ import {
   resolveSkin,
   roleSlot,
   style,
-} from '../hooks/theme.ts'
+} from '../plugin/hooks/theme.ts'
 
 const NOIR = `import type { Skin } from '../skin'
 

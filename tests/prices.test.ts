@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { costOf, priceFamily } from '../hooks/prices.ts'
+import { costOf, priceFamily } from '../plugin/hooks/prices.ts'
 
 const M = 1_000_000
 // the kit has no toBeCloseTo: equal to nine decimals

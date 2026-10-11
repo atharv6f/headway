@@ -1,9 +1,9 @@
 import { expect, test } from 'claude-code/testing'
-import { repinAgents, stepStart } from '../hooks/agents.ts'
-import type { AgentRecord } from '../hooks/agents.ts'
-import { sameFilter } from '../hooks/pin.ts'
-import { parsePlan } from '../hooks/plan.ts'
-import { PLAN, start, TOOL, world, userCommand } from './world.ts'
+import { repinAgents, stepStart } from '../plugin/hooks/agents.ts'
+import type { AgentRecord } from '../plugin/hooks/agents.ts'
+import { sameFilter } from '../plugin/hooks/pin.ts'
+import { parsePlan } from '../plugin/hooks/plan.ts'
+import { PLAN, start, TOOL, transcripts, world, userCommand } from './world.ts'
 
 // Pinning again (SPEC 3.3): the same filter only re-reads; another filter keeps the agents still at
 // work, re-matched to the new plan, drops the finished ones and keeps the log.
@@ -28,7 +28,12 @@ function spawnInput(n: number, description: string) {
 function setup(on) {
   const w = world(on, { files: FILES, sessionId: 's-1' })
   let n = 0
-  on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ag' + n++ }))
+  const spawned = transcripts(on)
+  on('agent.spawn', async (_$, e) => {
+    const agentId = 'ag' + n++
+    spawned(agentId, e.prompt)
+    return { model: 'claude-sonnet-5-5', agentId }
+  })
   on('turn.complete', async () => ({ text: '' }))
   on('agent.list', async () => ({ value: [] }))
   return w
@@ -43,7 +48,7 @@ test('re-pin: the same filter again keeps a running agent and the log, and logs 
   await $.agent.spawn(spawnInput(1, 'T2 build'))
   expect(await userCommand($, 'track plan/p.md "Work" column=landed')).toBeDefined()
   await trackP($, 't2')
-  expect((w.last.agents as A[]).map((a) => a.id + ':' + a.status)).toEqual(['ag0:queued'])
+  expect((w.last.agents as A[]).map((a) => a.id + ':' + a.status)).toEqual(['toolu_1:queued'])
   const log = w.last.log as L[]
   expect(log.filter((l) => l.kind === 'pin').map((l) => l.detail)).toEqual(['re-read p.md § Work  column=landed', 're-read p.md § Work  column=landed', 'tracking p.md § Work  column=landed'])
   // the agent's BLOCKED answer still lands
@@ -62,7 +67,7 @@ test('re-pin: another filter keeps agents at work re-matched to the new plan, dr
   await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 't', agentId: 'ag0', reason: 'answer' })
   await $.tool.call({ tool: TOOL, tool_use_id: 't2', action: 'track', file: 'plan/q.md', section: 'Other' })
   const agents = w.last.agents as A[]
-  expect(agents.map((a) => a.id + ':' + a.status + ':' + a.taskIds.join(','))).toEqual(['ag1:queued:', 'ag2:queued:X1'])
+  expect(agents.map((a) => a.id + ':' + a.status + ':' + a.taskIds.join(','))).toEqual(['toolu_2:queued:', 'toolu_3:queued:X1'])
   const log = w.last.log as L[]
   expect(log[0]).toMatchObject({ kind: 'pin', detail: 'tracking q.md § Other' })
   expect(log.map((l) => l.kind)).toEqual(['pin', 'done', 'pin'])

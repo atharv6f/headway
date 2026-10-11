@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { PLAN, start, TOOL, world } from './world.ts'
-import { insideDir } from '../hooks/pin.ts'
+import { insideDir } from '../plugin/hooks/pin.ts'
 
 // What headway reads on Claude's behalf stays inside what the user's own permissions would show it
 // (SPEC 14): the model tool pins a file only inside the project; a Workflow script is read only from

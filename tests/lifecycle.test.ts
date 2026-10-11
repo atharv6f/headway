@@ -1,11 +1,11 @@
 import { expect, test } from 'claude-code/testing'
-import { addPlanned, bandCurrent, bindRun, buildTree, completeAgent, settleRestored, spawnAgent, stepEnd, stepStart, tick } from '../hooks/agents.ts'
-import type { AgentRecord, LogEntry, Outcome, SpawnEvent } from '../hooks/agents.ts'
-import { agentRows, DEFAULT_UI, logRows, rowText, usageRows } from '../hooks/pane.tsx'
-import type { PaneData } from '../hooks/pane.tsx'
-import { stateBlock } from '../hooks/tool.ts'
-import { parsePlan } from '../hooks/plan.ts'
-import type { Plan } from '../hooks/plan.ts'
+import { addPlanned, bandCurrent, bindRun, buildTree, completeAgent, settleRestored, spawnAgent, stepEnd, stepStart, tick } from '../plugin/hooks/agents.ts'
+import type { AgentRecord, LogEntry, Outcome, SpawnEvent } from '../plugin/hooks/agents.ts'
+import { agentRows, DEFAULT_UI, logRows, rowText, usageRows } from '../plugin/hooks/pane.tsx'
+import type { PaneData } from '../plugin/hooks/pane.tsx'
+import { stateBlock } from '../plugin/hooks/tool.ts'
+import { parsePlan } from '../plugin/hooks/plan.ts'
+import type { Plan } from '../plugin/hooks/plan.ts'
 
 // Agent lifecycle edges: records that outlive their process, runs that end with calls unspawned,
 // retries the engine does not raise, and the merge of an early record into its spawn.

@@ -1,14 +1,14 @@
 import { expect, mock, test } from 'claude-code/testing'
-import { buildTree } from '../hooks/agents.ts'
-import type { AgentRecord, LogEntry } from '../hooks/agents.ts'
-import { agentRows, bodyRows, DEFAULT_UI, logRows, planView, rowText, rowWidth, usageRows } from '../hooks/pane.tsx'
-import { modelEffort } from '../hooks/display.ts'
-import { reportPlan, stateBlock } from '../hooks/tool.ts'
-import { modePlan } from '../hooks/sources.ts'
-import { parsePlanMode } from '../hooks/planmode.ts'
-import type { PaneData, PaneRow, Tab, UiState } from '../hooks/pane.tsx'
-import { parseGroupMap, parsePlan } from '../hooks/plan.ts'
-import type { Plan } from '../hooks/plan.ts'
+import { buildTree } from '../plugin/hooks/agents.ts'
+import type { AgentRecord, LogEntry } from '../plugin/hooks/agents.ts'
+import { agentRows, bodyRows, DEFAULT_UI, logRows, planView, rowText, rowWidth, usageRows } from '../plugin/hooks/pane.tsx'
+import { modelEffort } from '../plugin/hooks/display.ts'
+import { reportPlan, stateBlock } from '../plugin/hooks/tool.ts'
+import { modePlan } from '../plugin/hooks/sources.ts'
+import { parsePlanMode } from '../plugin/hooks/planmode.ts'
+import type { PaneData, PaneRow, Tab, UiState } from '../plugin/hooks/pane.tsx'
+import { parseGroupMap, parsePlan } from '../plugin/hooks/plan.ts'
+import type { Plan } from '../plugin/hooks/plan.ts'
 import { text as tasksText } from './fixtures/release-table.ts'
 import { text as boardText } from './fixtures/release-groups.ts'
 import { userCommand } from './world.ts'
@@ -526,11 +526,26 @@ function spawnInput(over: Record<string, unknown>) {
   }
 }
 
+// The agent's first step, which joins its agentId to the spawn's record (the short id the pane shows).
+function stepBeneath(on) {
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+}
+
+async function firstStep($, agentId = 'ab12cd34') {
+  for await (const _ of $.turn.step({ turnId: 't', index: 0, model: 'claude-sonnet-5-5', messageCount: 1, agentId })) {
+    // drain
+  }
+}
+
 test('hooks: the pane draws the tab row and the plan tab; a tab button switches the body', async ($, on) => {
   mock.clock(on, { now: 5000 })
   mock.env(on, {})
   on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ab12cd34' }))
+  stepBeneath(on)
   await $.agent.spawn(spawnInput({ description: 'census of the seams' }))
+  await firstStep($)
   const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'Pane', requestId: 'headway', props: PANE_PROPS })
   for (const k of ['tab-plan', 'tab-agents', 'tab-log', 'tab-usage', 'expand', 'hide', 'reread', 'quit']) expect(await ui.find({ key: k })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /no plan$/ })).toBeDefined()
@@ -552,7 +567,9 @@ test('hooks: a group row is a Button that toggles; e expands all; h hides done',
   mock.clock(on, { now: 5000 })
   mock.env(on, {})
   on('agent.spawn', async () => ({ model: 'claude-sonnet-5-5', agentId: 'ab12cd34' }))
+  stepBeneath(on)
   await $.agent.spawn(spawnInput({ description: 'census of the seams' }))
+  await firstStep($)
   const ui = await $.ui.mount({ plugin: 'headway', surface: 'terminal', component: 'Pane', requestId: 'headway', props: PANE_PROPS })
   // no plan: the agent sits under Agents, which starts open
   expect(await ui.find({ key: 'row:g:agents' })).toBeDefined()

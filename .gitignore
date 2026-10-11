@@ -1,3 +1,4 @@
 tsconfig.json
-.claude-plugin/types/
+plugin/.claude-plugin/types/
 docs/screenshots/raw/
+.DS_Store

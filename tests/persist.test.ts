@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { PLAN, start, TOOL, world } from './world.ts'
-import { TASKS_MAX, TITLE_MAX } from '../hooks/format.ts'
-import { capSession, MAX_RECORD_BYTES, recordText } from '../hooks/persist.ts'
+import { TASKS_MAX, TITLE_MAX } from '../plugin/hooks/format.ts'
+import { capSession, MAX_RECORD_BYTES, recordText } from '../plugin/hooks/persist.ts'
 
 // `$.store` persistence: debounced saves under `session:<id>`, the reload on classic.SessionStart
 // (clear, resume, fork; more in reload.test.ts) and the 14-day prune.

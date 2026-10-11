@@ -1,13 +1,13 @@
 import { expect, test } from 'claude-code/testing'
-import { activeSource, applyReport, approvePlan, goalLabel, isNewWork, isPlanModeFile, modePlan, promptLabel, sourcePlan, startLabel } from '../hooks/sources.ts'
-import type { Sources } from '../hooks/sources.ts'
-import { parsePlanMode } from '../hooks/planmode.ts'
+import { activeSource, applyReport, approvePlan, goalLabel, isNewWork, isPlanModeFile, modePlan, promptLabel, sourcePlan, startLabel } from '../plugin/hooks/sources.ts'
+import type { Sources } from '../plugin/hooks/sources.ts'
+import { parsePlanMode } from '../plugin/hooks/planmode.ts'
 import { text as nested } from './fixtures/plan-nested.ts'
-import { candidateIds } from '../hooks/plan.ts'
-import { matchAgent } from '../hooks/agents.ts'
-import { reportPlan } from '../hooks/tool.ts'
-import { TASKS_MAX, TITLE_MAX } from '../hooks/format.ts'
-import { tasksPlan } from '../hooks/tasks.ts'
+import { candidateIds } from '../plugin/hooks/plan.ts'
+import { matchAgent } from '../plugin/hooks/agents.ts'
+import { reportPlan } from '../plugin/hooks/tool.ts'
+import { TASKS_MAX, TITLE_MAX } from '../plugin/hooks/format.ts'
+import { tasksPlan } from '../plugin/hooks/tasks.ts'
 
 // The source model (SPEC 4.1, 4.8): one precedence table, the tag it names, the label it draws.
 const FILE = { file: '/w/plan/p.md', section: 'Work' }

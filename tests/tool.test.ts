@@ -1,10 +1,10 @@
 import { expect, test } from 'claude-code/testing'
-import { filterFromInput, parsePinArgs } from '../hooks/pin.ts'
-import { contextHint, parseReport, reportPlan, stateBlock, trackLine } from '../hooks/tool.ts'
-import type { StateData } from '../hooks/tool.ts'
-import { isStale, PRUNE_MS } from '../hooks/persist.ts'
-import { parsePlan } from '../hooks/plan.ts'
-import type { AgentRecord } from '../hooks/agents.ts'
+import { filterFromInput, parsePinArgs } from '../plugin/hooks/pin.ts'
+import { contextHint, parseReport, reportPlan, stateBlock, trackLine } from '../plugin/hooks/tool.ts'
+import type { StateData } from '../plugin/hooks/tool.ts'
+import { isStale, PRUNE_MS } from '../plugin/hooks/persist.ts'
+import { parsePlan } from '../plugin/hooks/plan.ts'
+import type { AgentRecord } from '../plugin/hooks/agents.ts'
 
 const CWD = '/home/dev/project'
 

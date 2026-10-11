@@ -3,6 +3,6 @@
   "owner": { "name": "atharv6f" },
   "description": "Headway: goal, task and agent progress above the Claude Code prompt",
   "plugins": [
-    { "name": "headway", "source": "./", "description": "Goal, task and agent progress above the Claude Code prompt — zero setup" }
+    { "name": "headway", "source": "./plugin", "description": "Goal, task and agent progress above the Claude Code prompt — zero setup" }
   ]
 }

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import { candidateIds, parseGroupMap, parsePlan, parseTaskId } from '../hooks/plan.ts'
-import type { Plan } from '../hooks/plan.ts'
+import { candidateIds, parseGroupMap, parsePlan, parseTaskId } from '../plugin/hooks/plan.ts'
+import type { Plan } from '../plugin/hooks/plan.ts'
 import { checklistItems, isEmpty, sectionTable } from './count.ts'
 import { text as checklistText } from './fixtures/release-steps.ts'
 import { text as tableText } from './fixtures/check-table.ts'

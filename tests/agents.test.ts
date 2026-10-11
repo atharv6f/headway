@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import { parsePlanMode } from '../hooks/planmode.ts'
-import { modePlan } from '../hooks/sources.ts'
+import { parsePlanMode } from '../plugin/hooks/planmode.ts'
+import { modePlan } from '../plugin/hooks/sources.ts'
 import {
   addPlanned,
   appendLog,
@@ -20,10 +20,10 @@ import {
   stepStart,
   tick,
   unpinEntry,
-} from '../hooks/agents.ts'
-import type { AgentRecord, LogEntry, Outcome, SpawnEvent } from '../hooks/agents.ts'
-import { parseGroupMap, parsePlan } from '../hooks/plan.ts'
-import type { Plan } from '../hooks/plan.ts'
+} from '../plugin/hooks/agents.ts'
+import type { AgentRecord, LogEntry, Outcome, SpawnEvent } from '../plugin/hooks/agents.ts'
+import { parseGroupMap, parsePlan } from '../plugin/hooks/plan.ts'
+import type { Plan } from '../plugin/hooks/plan.ts'
 import { text as tasksText } from './fixtures/release-table.ts'
 import { text as boardText } from './fixtures/release-groups.ts'
 

@@ -1,8 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 import { start, TOOL, world } from './world.ts'
-import { quietSegs } from '../hooks/quiet.tsx'
-import { register } from '../hooks/register.tsx'
-import type { Seg } from '../hooks/band.tsx'
+import { quietSegs } from '../plugin/hooks/quiet.tsx'
+import { register } from '../plugin/hooks/register.tsx'
+import type { Seg } from '../plugin/hooks/band.tsx'
 
 // The transcript rows of headway's own tool (SPEC 10.4): one dim line per call, the result folded in.
 const text = (segs: Seg[]) => segs.map((s) => s.text).join('')
@@ -131,6 +131,9 @@ test('registration: the band and the pane have their own ui.render hook; the tra
   expect(renderMatchers({})).toEqual([{ component: ['AbovePrompt', 'Pane'] }, { component: ['ToolUse', 'ToolResult'], props: { tool: TOOL } }])
 })
 
-test('registration: quietToolRows false registers no transcript hook at all', async () => {
-  expect(renderMatchers({ quietToolRows: false })).toEqual([{ component: ['AbovePrompt', 'Pane'] }])
+// Every registration is unconditional (the directory's static analysis reads each on() as a line of
+// its own); with quietToolRows false the transcript hook stays registered and passes every row on,
+// which the hook test above shows.
+test('registration: quietToolRows false registers the same hooks as true', async () => {
+  expect(renderMatchers({ quietToolRows: false })).toEqual(renderMatchers({}))
 })
